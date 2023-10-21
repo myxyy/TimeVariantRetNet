@@ -3,14 +3,9 @@
 ## Overview
 https://qiita.com/3405691582/items/b41f8b37b99148e67ba9
 
-## Usage
-コンテナ上で操作します。
-```
-docker compose up -d
-docker exec -it sconv bash
 ```
 ### Predict
-モデルckptファイルを`sconv/weight`に配置し、`sconv/configs/predict/default.yaml`の`weight`欄を適宜変更してください。
+モデルckptファイルを`weight`に配置し、`configs/predict/default.yaml`の`weight`欄を適宜変更してください。
 ```
 make predict
 ```
