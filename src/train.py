@@ -22,12 +22,17 @@ def main(cfg):
     optimizer = model.configure_optimizers()
     print(f"parameters:{model.num_parameters}")
     pbar = tqdm(dataloader)
+    i = 0
     for batch in pbar:
+        if i == 10:
+            break
         optimizer.zero_grad()
         loss = model.training_step(batch)
         loss.backward()
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
+        i += 1
+    torch.save(model.state_dict(), 'weight/weight.pth')
 
 if __name__ == '__main__':
     main()
