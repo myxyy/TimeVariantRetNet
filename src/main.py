@@ -6,7 +6,7 @@ import torch
 from torchmetrics import MeanMetric
 import torch.nn as nn
 
-class Lang(pl.LightningModule):
+class Lang(nn.Module):
     def __init__(self, model=SpiralConv, depth=32, dropout=0.1, vocab_size=256, dim=256, dim_ff_scale=2, enable_profiling=False, text_load_mode='cut'):
         super().__init__()
         self.text_load_mode = text_load_mode
@@ -20,7 +20,7 @@ class Lang(pl.LightningModule):
         self.clear_count = 0
 
         self.apply(self._init_weights)
-        self.save_hyperparameters()
+        #self.save_hyperparameters()
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -41,18 +41,16 @@ class Lang(pl.LightningModule):
         return text_hat
 
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch):
         text, text_next = batch
-
-        if self.clear_count % 128 == 0:
-            self.model.reset_hidden()
-        self.clear_count += 1
+        text = text.to('cuda:0')
+        text_next = text_next.to('cuda:0')
 
         text_hat = self(text)
 
         loss = nn.CrossEntropyLoss()(text_hat.view(-1,self.vocab_size), text_next.view(-1).long())
 
-        self.log("train_loss", loss, on_epoch=False, prog_bar=True)
+        #self.log("train_loss", loss, on_epoch=False, prog_bar=True)
         return loss
 
     def forward(self, x):
