@@ -82,12 +82,20 @@ class SpiralConvBlock(nn.Module):
         self.spiral_conv.set_is_refresh(is_refresh)
 
 class SpiralConv(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_scale: float, dropout: float):
+    def __init__(self, depth: int, dim: int, dim_ff_scale: float, dropout: float, devices):
         super().__init__()
+        self.devices = devices
         self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_scale, dropout) for _ in range(depth)])
+        for i, block in enumerate(self.block_list):
+            block.to(devices[self.device_index(i)])
+
+    def device_index(self, i):
+        return (len(self.devices) * i) // len(self.block_list)
 
     def forward(self, x):
-        for block in self.block_list:
+        for i, block in enumerate(self.block_list):
+            if i > 0 and self.device_index(i) != self.device_index(i-1):
+                x = x.to(self.devices[self.device_index(i)])
             x = block(x)
         return x 
 

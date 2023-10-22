@@ -7,17 +7,18 @@ from torchmetrics import MeanMetric
 import torch.nn as nn
 
 class Lang(nn.Module):
-    def __init__(self, model=SpiralConv, depth=32, dropout=0.1, vocab_size=256, dim=256, dim_ff_scale=2, enable_profiling=False, text_load_mode='cut'):
+    def __init__(self, devices, model=SpiralConv, depth=32, dropout=0.1, vocab_size=256, dim=256, dim_ff_scale=2, enable_profiling=False, text_load_mode='cut'):
         super().__init__()
         self.text_load_mode = text_load_mode
         self.enable_profiling=enable_profiling
-        self.model = model(depth, dim, dim_ff_scale, dropout)
+        self.model = model(depth, dim, dim_ff_scale, dropout, devices)
         self.dim = dim
         self.vocab_size = vocab_size
-        self.token_in = nn.Linear(vocab_size, dim)
-        self.token_out = nn.Linear(dim, vocab_size)
+        self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
+        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
         self.num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         self.clear_count = 0
+        self.devices = devices
 
         self.apply(self._init_weights)
         #self.save_hyperparameters()
@@ -43,8 +44,8 @@ class Lang(nn.Module):
 
     def training_step(self, batch):
         text, text_next = batch
-        text = text.to('cuda:0')
-        text_next = text_next.to('cuda:0')
+        text = text.to(self.devices[0])
+        text_next = text_next.to(self.devices[-1])
 
         text_hat = self(text)
 

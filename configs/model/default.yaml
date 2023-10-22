@@ -1,5 +1,6 @@
 _target_: main.Lang
+_partial_: True
 dim: 1024
 depth: 128
-dim_ff_scale: 2
+dim_ff_scale: 4
 dropout: 0.1
