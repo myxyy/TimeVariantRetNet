@@ -110,4 +110,18 @@ class SpiralConv(nn.Module):
     def set_is_refresh(self, is_refresh):
         for block in self.block_list:
             block.set_is_refresh(is_refresh)
+
+    def module_list(self):
+        mlist = []
+        block_list = []
+        j = 0
+        for i, block in enumerate(self.block_list):
+            dind = self.device_index(i)
+            if j != dind:
+                mlist.append(nn.Sequential(*block_list))
+                block_list = []
+            block_list.append(block)
+        mlist.append(nn.Sequential(*block_list))
+        return mlist
+        
     

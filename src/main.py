@@ -41,7 +41,6 @@ class Lang(nn.Module):
 
         return text_hat
 
-
     def training_step(self, batch):
         text, text_next = batch
         text = text.to(self.devices[0])
@@ -70,6 +69,8 @@ class Lang(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.model.set_is_refresh(is_refresh)
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
-        return optimizer
+    def module_list(self):
+        mlist = self.model.module_list()
+        mlist[0] = nn.Sequential(self.token_in, mlist[0])
+        mlist[-1] = nn.Sequential(mlist[-1], self.token_out)
+        return mlist
