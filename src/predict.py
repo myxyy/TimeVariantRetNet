@@ -12,7 +12,7 @@ np.set_printoptions(threshold=np.inf)
 def main(cfg):
     devices = cfg.train.devices
     model = instantiate(cfg.model)
-    model = model(devices=cfg.train.devices)
+    model = model(devices=cfg.predict.devices)
     model.load_state_dict(torch.load('weight/weight.pth'))
     context_len = cfg.predict.context_len
     length = cfg.predict.max_len

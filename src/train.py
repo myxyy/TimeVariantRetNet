@@ -24,15 +24,13 @@ def main(cfg):
     pbar = tqdm(dataloader)
     i = 0
     for batch in pbar:
-        if i == 10:
-            break
         optimizer.zero_grad()
         loss = model.training_step(batch)
         loss.backward()
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
         i += 1
-    torch.save(model.state_dict(), 'weight/weight.pth')
+    torch.save(model.state_dict(), cfg.train.weight)
 
 if __name__ == '__main__':
     main()
