@@ -1,5 +1,5 @@
 weight: "weight/weight.ckpt"
-context_len: 256
+context_len: 1
 max_len: 1024
 devices:
   - 'cuda:0'

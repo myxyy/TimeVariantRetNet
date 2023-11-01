@@ -18,6 +18,8 @@ def main(cfg):
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
     model = instantiate(cfg.model)
     model = model(devices=cfg.train.devices)
+    if ckpt_path is not None:
+        model.load_state_dict(torch.load(ckpt_path))
     #trainer.fit(model, train_dataloaders=dataloader, ckpt_path=ckpt_path)
     optimizer = model.configure_optimizers()
     print(f"parameters:{model.num_parameters}")
