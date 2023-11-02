@@ -21,18 +21,17 @@ def main(cfg):
     if ckpt_path is not None:
         model.load_state_dict(torch.load(ckpt_path))
     #trainer.fit(model, train_dataloaders=dataloader, ckpt_path=ckpt_path)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
     print(f"parameters:{model.num_parameters}")
-    pbar = tqdm(dataloader)
-    i = 0
-    for batch in pbar:
-        optimizer.zero_grad()
-        loss = model.training_step(batch)
-        loss.backward()
-        optimizer.step()
-        pbar.set_postfix(loss=loss.item())
-        i += 1
-    torch.save(model.state_dict(), cfg.train.weight)
+    for _ in range(cfg.train.max_epochs):
+        pbar = tqdm(dataloader)
+        for batch in pbar:
+            optimizer.zero_grad()
+            loss = model.training_step(batch)
+            loss.backward()
+            optimizer.step()
+            pbar.set_postfix(loss=loss.item())
+        torch.save(model.state_dict(), cfg.train.weight)
 
 if __name__ == '__main__':
     main()
