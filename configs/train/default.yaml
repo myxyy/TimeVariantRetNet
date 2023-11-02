@@ -1,4 +1,4 @@
-length: 4096
+length: 2048
 max_epochs: 10
 log_every_n_steps: 1000
 text: "text/text.txt"

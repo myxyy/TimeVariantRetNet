@@ -27,31 +27,32 @@ def main(cfg):
     if ckpt_path is not None:
         model.load_state_dict(torch.load(ckpt_path))
 
-    model = nn.Sequential(*model.module_list())
-    model = Pipe(model, chunks=2)
-    model.train()
+    model_pipe = nn.Sequential(*model.module_list())
+    model_pipe = Pipe(model_pipe, chunks=2)
+    model_pipe.train()
     #trainer.fit(model, train_dataloaders=dataloader, ckpt_path=ckpt_path)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
     #print(f"parameters:{model.num_parameters}")
-    pbar = tqdm(dataloader)
-    i = 0
-    for batch in pbar:
-        optimizer.zero_grad()
+    for _ in range(cfg.train.max_epochs):
+        pbar = tqdm(dataloader)
+        i = 0
+        for batch in pbar:
+            optimizer.zero_grad()
 
-        text, text_next = batch
-        text = text.to(devices[0])
-        text_next = text_next.to(devices[-1])
-        text = nn.functional.one_hot(text.long(), 256).float()
+            text, text_next = batch
+            text = text.to(devices[0])
+            text_next = text_next.to(devices[-1])
+            text = nn.functional.one_hot(text.long(), 256).float()
 
-        text_hat = model(text).local_value()
+            text_hat = model_pipe(text).local_value()
 
-        loss = nn.CrossEntropyLoss()(text_hat.view(-1,256), text_next.view(-1).long())
+            loss = nn.CrossEntropyLoss()(text_hat.view(-1,256), text_next.view(-1).long())
  
-        loss.backward()
-        optimizer.step()
-        pbar.set_postfix(loss=loss.item())
-        i += 1
-    torch.save(model.state_dict(), cfg.train.weight)
+            loss.backward()
+            optimizer.step()
+            pbar.set_postfix(loss=loss.item())
+            i += 1
+        torch.save(model.state_dict(), cfg.train.weight)
 
 if __name__ == '__main__':
     main()
