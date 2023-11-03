@@ -112,16 +112,14 @@ class SpiralConv(nn.Module):
             block.set_is_refresh(is_refresh)
 
     def module_list(self):
-        mlist = []
-        block_list = []
-        j = 0
+        blistlist = []
+        for _ in self.devices:
+            blistlist.append([])
         for i, block in enumerate(self.block_list):
-            dind = self.device_index(i)
-            if j != dind:
-                mlist.append(nn.Sequential(*block_list))
-                block_list = []
-            block_list.append(block)
-        mlist.append(nn.Sequential(*block_list))
+            blistlist[self.device_index(i)].append(block)
+        mlist = []
+        for blist in blistlist:
+            mlist.append(nn.Sequential(*blist))
         return mlist
         
     

@@ -35,7 +35,6 @@ def main(cfg):
     #print(f"parameters:{model.num_parameters}")
     for _ in range(cfg.train.max_epochs):
         pbar = tqdm(dataloader)
-        i = 0
         for batch in pbar:
             optimizer.zero_grad()
 
@@ -51,7 +50,6 @@ def main(cfg):
             loss.backward()
             optimizer.step()
             pbar.set_postfix(loss=loss.item())
-            i += 1
         torch.save(model.state_dict(), cfg.train.weight)
 
 if __name__ == '__main__':
