@@ -16,24 +16,24 @@ def main(cfg):
     os.environ['MASTER_PORT'] = '29500'
     torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1)
     transforms = torchvision.transforms.Compose([])
-    dataset = TextDataset(cfg.train.text, cfg.train.length, transforms)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
-    ckpt_path = cfg.train.weight
+    dataset = TextDataset(cfg.train_pipeline.text, cfg.train_pipeline.length, transforms)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train_pipeline.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
+    ckpt_path = cfg.train_pipeline.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
     model = instantiate(cfg.model)
-    devices = cfg.train.devices
+    devices = cfg.train_pipeline.devices
     model = model(devices=devices)
     if ckpt_path is not None:
         model.load_state_dict(torch.load(ckpt_path))
 
     model_pipe = nn.Sequential(*model.module_list())
-    model_pipe = Pipe(model_pipe, chunks=2)
+    model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size)
     model_pipe.train()
     #trainer.fit(model, train_dataloaders=dataloader, ckpt_path=ckpt_path)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
     #print(f"parameters:{model.num_parameters}")
-    for _ in range(cfg.train.max_epochs):
+    for _ in range(cfg.train_pipeline.max_epochs):
         pbar = tqdm(dataloader)
         for batch in pbar:
             optimizer.zero_grad()
@@ -50,7 +50,7 @@ def main(cfg):
             loss.backward()
             optimizer.step()
             pbar.set_postfix(loss=loss.item())
-        torch.save(model.state_dict(), cfg.train.weight)
+        torch.save(model.state_dict(), cfg.train_pipeline.weight)
 
 if __name__ == '__main__':
     main()
