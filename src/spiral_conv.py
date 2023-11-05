@@ -50,7 +50,7 @@ class SpiralConvConvBlock(nn.Module):
         self.last_conv = None
 
     def randomize_init(self):
-        self.last_conv_init.value = torch.randn(self.dim, dtype=torch.cfloat)
+        self.last_conv = torch.randn(self.dim, dtype=torch.cfloat)
 
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
@@ -66,10 +66,6 @@ class SpiralConvBlock(nn.Module):
         x_ = x
         x = self.layer_norm(x)
         x = self.spiral_conv(x)
-        x = x + x_
-
-        x_ = x
-        x = self.layer_norm(x)
         x = self.ffn(x)
         x = x + x_
 
