@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 
 class FFN(nn.Module):
-    def __init__(self, dim: int, dim_ff_scale: float, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
         super().__init__()
-        self.linear_1 = nn.Linear(dim, dim*dim_ff_scale, bias=True)
-        self.linear_2 = nn.Linear(dim*dim_ff_scale, dim, bias=True)
+        self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True)
+        self.linear_2 = nn.Linear(dim_ff_hidden, dim, bias=True)
         self.act = nn.SiLU()
         self.dropout = nn.Dropout(dropout)
     def forward(self, x):
@@ -56,10 +56,10 @@ class SpiralConvConvBlock(nn.Module):
         self.is_refresh = is_refresh
 
 class SpiralConvBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_scale: float, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
         super().__init__()
         self.spiral_conv = SpiralConvConvBlock(dim)
-        self.ffn = FFN(dim, dim_ff_scale, dropout)
+        self.ffn = FFN(dim, dim_ff_hidden, dropout)
         self.layer_norm = nn.LayerNorm(dim)
 
     def forward(self, x):
@@ -85,10 +85,10 @@ class SpiralConvBlock(nn.Module):
         self.spiral_conv.set_is_refresh(is_refresh)
 
 class SpiralConv(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_scale: float, dropout: float, devices):
+    def __init__(self, depth: int, dim: int, dim_ff_hidden: float, dropout: float, devices):
         super().__init__()
         self.devices = devices
-        self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_scale, dropout) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_hidden, dropout) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 

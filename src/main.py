@@ -7,11 +7,11 @@ from torchmetrics import MeanMetric
 import torch.nn as nn
 
 class Lang(nn.Module):
-    def __init__(self, devices, model=SpiralConv, depth=32, dropout=0.1, vocab_size=256, dim=256, dim_ff_scale=2, enable_profiling=False, text_load_mode='cut'):
+    def __init__(self, devices, model=SpiralConv, depth=32, dropout=0.1, vocab_size=256, dim=256, dim_ff_hidden=512, enable_profiling=False, text_load_mode='cut'):
         super().__init__()
         self.text_load_mode = text_load_mode
         self.enable_profiling=enable_profiling
-        self.model = model(depth, dim, dim_ff_scale, dropout, devices)
+        self.model = model(depth, dim, dim_ff_hidden, dropout, devices)
         self.dim = dim
         self.vocab_size = vocab_size
         self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
