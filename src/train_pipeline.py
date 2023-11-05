@@ -20,12 +20,16 @@ def main(cfg):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train_pipeline.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
     ckpt_path = cfg.train_pipeline.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None
+    dtype = torch.bfloat16
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
     model = instantiate(cfg.model)
     devices = cfg.train_pipeline.devices
     model = model(devices=devices)
+    model = model.to(dtype)
     if ckpt_path is not None:
         model.load_state_dict(torch.load(ckpt_path))
+
+    print(f"#parameter:{model.num_parameters}")
 
     model_pipe = nn.Sequential(*model.module_list())
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size)
@@ -41,7 +45,7 @@ def main(cfg):
             text, text_next = batch
             text = text.to(devices[0])
             text_next = text_next.to(devices[-1])
-            text = nn.functional.one_hot(text.long(), 256).float()
+            text = nn.functional.one_hot(text.long(), 256).to(dtype)
 
             text_hat = model_pipe(text).local_value()
 

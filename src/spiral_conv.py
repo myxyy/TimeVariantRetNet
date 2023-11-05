@@ -19,21 +19,24 @@ class SpiralConvConvBlock(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
         self.dim = dim
-        self.phazor = nn.Parameter(torch.randn(dim, dtype=torch.cfloat)) # log(-log(gamma))
-        self.phazor_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat)) # log(-log(gamma))
+        self.phazor = nn.Parameter(torch.randn(dim, 2)) # log(-log(gamma))
+        self.phazor_init = nn.Parameter(torch.randn(dim, 2)) # log(-log(gamma))
         self.last_conv = None # (batch, dim)
-        self.last_conv_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat)) # (dim)
         self.is_refresh = True
 
     # (batch, len, dim) -> (batch, len, dim)
     def forward(self, x):
         batch = x.shape[0]
         len = x.shape[1]
+        dtype = x.dtype
+        x = x.float()
         if self.last_conv is None:
-            self.last_conv = self.last_conv_init.expand(batch, self.dim) 
-        phazor = self.phazor / self.phazor.abs() * torch.exp(-self.phazor.abs())
+            self.last_conv = torch.randn(self.dim, dtype=torch.cfloat, device=x.device)
+        phazor = torch.view_as_complex(self.phazor.float())
+        phazor_init = torch.view_as_complex(self.phazor_init.float())
+        phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
         phazor_progression = torch.pow(phazor.unsqueeze(0), torch.arange(len, device=x.device).unsqueeze(1)) # (len, dim)
-        filter = phazor_progression * self.phazor_init.unsqueeze(0)
+        filter = phazor_progression * phazor_init.unsqueeze(0)
         filter_fft = torch.fft.fft(filter, n=len*2, dim=0) # (len*2, dim)
         x_fft = torch.fft.fft(x, n=len*2, dim=1) # (batch, len*2, dim)
         conv_filter_x = torch.fft.ifft(filter_fft.unsqueeze(0) * x_fft, dim=1).narrow(1,0,len) # (batch, len, dim)
@@ -41,7 +44,7 @@ class SpiralConvConvBlock(nn.Module):
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
-        return conv_with_past.real
+        return conv_with_past.real.to(dtype)
 
     def reset_hidden(self):
         self.last_conv = None
