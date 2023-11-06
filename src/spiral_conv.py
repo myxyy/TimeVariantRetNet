@@ -16,11 +16,15 @@ class FFN(nn.Module):
         return x
 
 class SpiralConvConvBlock(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, dim_hidden: int):
         super().__init__()
         self.dim = dim
-        self.phazor = nn.Parameter(torch.randn(dim, 2)) # log(-log(gamma))
-        self.phazor_init = nn.Parameter(torch.randn(dim, 2)) # log(-log(gamma))
+        self.dim_hidden = dim_hidden
+        self.linear_in = nn.Linear(dim, dim_hidden)
+        self.linear_out = nn.Linear(dim_hidden, dim)
+        self.phazor = nn.Parameter(torch.randn(dim_hidden, 2)) # log(-log(gamma))
+        self.phazor_init = nn.Parameter(torch.randn(dim_hidden, 2)) # log(-log(gamma))
+        self.act = nn.SiLU()
         self.last_conv = None # (batch, dim)
         self.is_refresh = True
 
@@ -29,9 +33,9 @@ class SpiralConvConvBlock(nn.Module):
         batch = x.shape[0]
         len = x.shape[1]
         dtype = x.dtype
-        x = x.float()
+        x = self.linear_in(x).float()
         if self.last_conv is None:
-            self.last_conv = torch.randn(self.dim, dtype=torch.cfloat, device=x.device)
+            self.last_conv = torch.randn((batch, self.dim_hidden), dtype=torch.cfloat, device=x.device)
         phazor = torch.view_as_complex(self.phazor.float())
         phazor_init = torch.view_as_complex(self.phazor_init.float())
         phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
@@ -44,21 +48,21 @@ class SpiralConvConvBlock(nn.Module):
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
-        return conv_with_past.real.to(dtype)
+        return self.linear_out(self.act(conv_with_past.real.to(dtype)))
 
     def reset_hidden(self):
         self.last_conv = None
 
     def randomize_init(self):
-        self.last_conv = torch.randn(self.dim, dtype=torch.cfloat)
+        self.last_conv = torch.randn(self.dim_hidden, dtype=torch.cfloat)
 
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
 class SpiralConvBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float):
         super().__init__()
-        self.spiral_conv = SpiralConvConvBlock(dim)
+        self.spiral_conv = SpiralConvConvBlock(dim, dim_sc_hidden)
         self.ffn = FFN(dim, dim_ff_hidden, dropout)
         self.layer_norm = nn.LayerNorm(dim)
 
@@ -66,6 +70,10 @@ class SpiralConvBlock(nn.Module):
         x_ = x
         x = self.layer_norm(x)
         x = self.spiral_conv(x)
+        x = x + x_
+
+        x_ = x
+        x = self.layer_norm(x)
         x = self.ffn(x)
         x = x + x_
 
@@ -81,10 +89,10 @@ class SpiralConvBlock(nn.Module):
         self.spiral_conv.set_is_refresh(is_refresh)
 
 class SpiralConv(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_hidden: float, dropout: float, devices):
+    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, devices):
         super().__init__()
         self.devices = devices
-        self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_hidden, dropout) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
