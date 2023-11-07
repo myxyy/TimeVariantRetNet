@@ -69,7 +69,7 @@ class SpiralConvBlock(nn.Module):
         super().__init__()
         self.spiral_conv = SpiralConvConvBlock(dim, dim_sc_hidden, dropout)
         self.ffn = FFN(dim, dim_ff_hidden, dropout)
-        self.layer_norm = nn.LayerNorm(dim)
+        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False)
 
     def forward(self, x):
         x_ = x

@@ -22,14 +22,14 @@ class Lang(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            nn.init.normal_(m.weight, std=self.num_parameters**-0.5)
+            nn.init.normal_(m.weight, std=self.dim**-0.5)
             if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.normal_(m.bias, std=self.num_parameters**-0.5)
+                nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Parameter):
-            nn.init.normal_(m.weight, std=self.num_parameters**-0.5)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+            nn.init.constant_(m.weight, 0)
+        #elif isinstance(m, nn.LayerNorm):
+            #nn.init.constant_(m.bias, 0)
+            #nn.init.constant_(m.weight, 1.0)
 
     def predict_step(self, batch):
         text = batch
