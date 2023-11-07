@@ -16,17 +16,18 @@ class FFN(nn.Module):
         return x
 
 class SpiralConvConvBlock(nn.Module):
-    def __init__(self, dim: int, dim_hidden: int):
+    def __init__(self, dim: int, dim_hidden: int, dropout: float):
         super().__init__()
         self.dim = dim
         self.dim_hidden = dim_hidden
         self.linear_in = nn.Linear(dim, dim_hidden)
         self.linear_out = nn.Linear(dim_hidden, dim)
-        self.phazor = nn.Parameter(torch.randn(dim_hidden, 2)) # log(-log(gamma))
-        self.phazor_init = nn.Parameter(torch.randn(dim_hidden, 2)) # log(-log(gamma))
+        self.phazor = nn.Parameter(torch.randn(dim_hidden, 2))
+        self.phazor_init = nn.Parameter(torch.randn(dim_hidden, 2))
         self.act = nn.SiLU()
         self.last_conv = None # (batch, dim)
         self.is_refresh = True
+        self.dropout = nn.Dropout(dropout)
 
     # (batch, len, dim) -> (batch, len, dim)
     def forward(self, x):
@@ -48,13 +49,17 @@ class SpiralConvConvBlock(nn.Module):
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
-        return self.linear_out(self.act(conv_with_past.real.to(dtype)))
+        y = conv_with_past.real.to(dtype)
+        y = self.act(y)
+        y = self.linear_out(y)
+        y = self.dropout(y)
+        return y
 
     def reset_hidden(self):
         self.last_conv = None
 
     def randomize_init(self):
-        self.last_conv = torch.randn(self.dim_hidden, dtype=torch.cfloat)
+        self.last_conv = torch.randn(self.dim_hidden, dtype=torch.cfloat, device=self.linear_in.weight.device)
 
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
@@ -62,7 +67,7 @@ class SpiralConvConvBlock(nn.Module):
 class SpiralConvBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float):
         super().__init__()
-        self.spiral_conv = SpiralConvConvBlock(dim, dim_sc_hidden)
+        self.spiral_conv = SpiralConvConvBlock(dim, dim_sc_hidden, dropout)
         self.ffn = FFN(dim, dim_ff_hidden, dropout)
         self.layer_norm = nn.LayerNorm(dim)
 

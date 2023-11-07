@@ -1,9 +1,6 @@
 from spiral_conv import SpiralConv
-import pytorch_lightning as pl
-from timm.models.layers import trunc_normal_
 import torchvision.transforms as transforms
 import torch
-from torchmetrics import MeanMetric
 import torch.nn as nn
 
 class Lang(nn.Module):
@@ -25,9 +22,11 @@ class Lang(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=self.num_parameters**-0.5)
+            nn.init.normal_(m.weight, std=self.num_parameters**-0.5)
             if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+                nn.init.normal_(m.bias, std=self.num_parameters**-0.5)
+        elif isinstance(m, nn.Parameter):
+            nn.init.normal_(m.weight, std=self.num_parameters**-0.5)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)

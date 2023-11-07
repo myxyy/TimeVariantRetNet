@@ -14,6 +14,7 @@ def main(cfg):
     model = instantiate(cfg.model)
     model = model(devices=devices)
     model.load_state_dict(torch.load('weight/weight.pth'))
+    model.eval()
     context_len = cfg.predict.context_len
     length = cfg.predict.max_len
     vocab_size = model.vocab_size
@@ -29,7 +30,6 @@ def main(cfg):
 
         beam_width = 1
         model.randomize_init()
-        model.reset_hidden()
 
         current_len = 0
         start = 0
