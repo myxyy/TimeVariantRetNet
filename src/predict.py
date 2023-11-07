@@ -13,7 +13,7 @@ def main(cfg):
     devices = cfg.predict.devices
     model = instantiate(cfg.model)
     model = model(devices=devices)
-    model.load_state_dict(torch.load('weight/weight.pth'))
+    model.load_state_dict(torch.load(cfg.predict.weight)['state_dict'])
     model.eval()
     context_len = cfg.predict.context_len
     length = cfg.predict.max_len

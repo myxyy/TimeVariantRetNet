@@ -26,35 +26,49 @@ def main(cfg):
     devices = cfg.train_pipeline.devices
     model = model(devices=devices)
     model = model.to(dtype)
+    epochs = 0
+    steps = 0
     if ckpt_path is not None:
-        model.load_state_dict(torch.load(ckpt_path))
+        ckpt = torch.load(ckpt_path)
+        model.load_state_dict(ckpt['state_dict'])
+        epochs = ckpt['epochs']
+        steps = ckpt['steps']
 
     print(f"#parameter:{model.num_parameters}")
 
     model_pipe = nn.Sequential(*model.module_list())
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size)
     model_pipe.train()
-    #trainer.fit(model, train_dataloaders=dataloader, ckpt_path=ckpt_path)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
-    #print(f"parameters:{model.num_parameters}")
-    for _ in range(cfg.train_pipeline.max_epochs):
-        pbar = tqdm(dataloader)
-        for batch in pbar:
-            optimizer.zero_grad()
+    def save():
+        torch.save({'state_dict': model.state_dict(), 'steps': steps, 'epochs': epochs}, cfg.train_pipeline.weight)
+    try:
+        for _ in range(cfg.train_pipeline.max_epochs - epochs):
+            pbar = tqdm(dataloader, initial=steps)
+            for batch in pbar:
+                optimizer.zero_grad()
 
-            text, text_next = batch
-            text = text.to(devices[0])
-            text_next = text_next.to(devices[-1])
-            text = nn.functional.one_hot(text.long(), 256).to(dtype)
+                text, text_next = batch
+                text = text.to(devices[0])
+                text_next = text_next.to(devices[-1])
+                text = nn.functional.one_hot(text.long(), 256).to(dtype)
 
-            text_hat = model_pipe(text).local_value()
+                text_hat = model_pipe(text).local_value()
 
-            loss = nn.CrossEntropyLoss()(text_hat.view(-1,256), text_next.view(-1).long())
+                loss = nn.CrossEntropyLoss()(text_hat.view(-1,256), text_next.view(-1).long())
  
-            loss.backward()
-            optimizer.step()
-            pbar.set_postfix(loss=loss.item())
-        torch.save(model.state_dict(), cfg.train_pipeline.weight)
+                loss.backward()
+                optimizer.step()
+                pbar.set_postfix(loss=loss.item())
+                steps += 1
+            save()
+            steps = 0
+            epochs += 1
+    except KeyboardInterrupt:
+        save()
+        print(f'KeyboardInterrupted')
+        print(f'steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
+
 
 if __name__ == '__main__':
     main()

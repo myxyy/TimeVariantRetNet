@@ -1,7 +1,7 @@
 _target_: main.Lang
 _partial_: True
 dim: 2048
-depth: 24
+depth: 16
 dim_ff_hidden: 8192
 dim_sc_hidden: 8192
 dropout: 0.1
