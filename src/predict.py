@@ -10,9 +10,9 @@ np.set_printoptions(threshold=np.inf)
 
 @hydra.main(version_base=None, config_path="../configs/", config_name="config")
 def main(cfg):
-    devices = cfg.train.devices
+    devices = cfg.predict.devices
     model = instantiate(cfg.model)
-    model = model(devices=cfg.predict.devices)
+    model = model(devices=devices)
     model.load_state_dict(torch.load('weight/weight.pth'))
     context_len = cfg.predict.context_len
     length = cfg.predict.max_len
