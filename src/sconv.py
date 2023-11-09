@@ -15,7 +15,7 @@ class FFN(nn.Module):
         x = self.dropout(x)
         return x
 
-class SpiralConvConvBlock(nn.Module):
+class SConv(nn.Module):
     def __init__(self, dim: int, dim_hidden: int, dropout: float):
         super().__init__()
         self.dim = dim
@@ -26,6 +26,7 @@ class SpiralConvConvBlock(nn.Module):
         self.phazor_init = nn.Parameter(torch.randn(dim_hidden, 2))
         self.act = nn.SiLU()
         self.last_conv = None # (batch, dim)
+        self.last_conv_init = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
         self.is_refresh = True
         self.dropout = nn.Dropout(dropout)
 
@@ -36,7 +37,7 @@ class SpiralConvConvBlock(nn.Module):
         dtype = x.dtype
         x = self.linear_in(x).float()
         if self.last_conv is None:
-            self.last_conv = torch.randn((batch, self.dim_hidden), dtype=torch.cfloat, device=x.device)
+            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden).to(x.device)
         phazor = torch.view_as_complex(self.phazor.float())
         phazor_init = torch.view_as_complex(self.phazor_init.float())
         phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
@@ -64,10 +65,10 @@ class SpiralConvConvBlock(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
-class SpiralConvBlock(nn.Module):
+class SConvNetBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float):
         super().__init__()
-        self.spiral_conv = SpiralConvConvBlock(dim, dim_sc_hidden, dropout)
+        self.spiral_conv = SConv(dim, dim_sc_hidden, dropout)
         self.ffn = FFN(dim, dim_ff_hidden, dropout)
         self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False)
 
@@ -93,11 +94,13 @@ class SpiralConvBlock(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.spiral_conv.set_is_refresh(is_refresh)
 
-class SpiralConv(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, devices):
+class SConvNet(nn.Module):
+    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, vocab_size: int, devices):
         super().__init__()
         self.devices = devices
-        self.block_list = nn.ModuleList([SpiralConvBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
+        self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
+        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
+        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
@@ -132,6 +135,8 @@ class SpiralConv(nn.Module):
         mlist = []
         for blist in blistlist:
             mlist.append(nn.Sequential(*blist))
+        mlist[0] = nn.Sequential(self.token_in, mlist[0])
+        mlist[-1] = nn.Sequential(mlist[-1], self.token_out)
         return mlist
         
     

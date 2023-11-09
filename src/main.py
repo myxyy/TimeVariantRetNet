@@ -1,4 +1,4 @@
-from spiral_conv import SpiralConv
+from sconv import SpiralConv
 import torchvision.transforms as transforms
 import torch
 import torch.nn as nn

@@ -34,7 +34,8 @@ def main(cfg):
         epochs = ckpt['epochs']
         steps = ckpt['steps']
 
-    print(f"#parameter:{model.num_parameters}")
+    num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"#parameter:{num_parameters}")
 
     model_pipe = nn.Sequential(*model.module_list())
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size)
