@@ -38,6 +38,8 @@ class SConv(nn.Module):
         x = self.linear_in(x).float()
         if self.last_conv is None:
             self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden).to(x.device)
+        else:
+            self.last_conv = self.last_conv.detach()
         phazor = torch.view_as_complex(self.phazor.float())
         phazor_init = torch.view_as_complex(self.phazor_init.float())
         phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
@@ -46,7 +48,7 @@ class SConv(nn.Module):
         filter_fft = torch.fft.fft(filter, n=len*2, dim=0) # (len*2, dim)
         x_fft = torch.fft.fft(x, n=len*2, dim=1) # (batch, len*2, dim)
         conv_filter_x = torch.fft.ifft(filter_fft.unsqueeze(0) * x_fft, dim=1).narrow(1,0,len) # (batch, len, dim)
-        conv_with_past = conv_filter_x + self.last_conv.detach().unsqueeze(1)*phazor_progression.unsqueeze(0)*phazor.unsqueeze(0).unsqueeze(0)
+        conv_with_past = conv_filter_x + self.last_conv.unsqueeze(1)*phazor_progression.unsqueeze(0)*phazor.unsqueeze(0).unsqueeze(0)
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
@@ -98,6 +100,7 @@ class SConvNet(nn.Module):
     def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, vocab_size: int, devices):
         super().__init__()
         self.devices = devices
+        self.vocab_size = vocab_size
         self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
@@ -108,10 +111,12 @@ class SConvNet(nn.Module):
         return (len(self.devices) * i) // len(self.block_list)
 
     def forward(self, x):
+        x = self.token_in(x)
         for i, block in enumerate(self.block_list):
             if i > 0 and self.device_index(i) != self.device_index(i-1):
                 x = x.to(self.devices[self.device_index(i)])
             x = block(x)
+        x = self.token_out(x)
         return x 
 
     def reset_hidden(self):
