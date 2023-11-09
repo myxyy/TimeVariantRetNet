@@ -5,7 +5,11 @@ class FFN(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
         super().__init__()
         self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True)
+        nn.init.normal_(self.linear_1.weight, std=dim**-0.5)
+        nn.init.constant_(self.linear_1.bias, 0)
         self.linear_2 = nn.Linear(dim_ff_hidden, dim, bias=True)
+        nn.init.normal_(self.linear_2.weight, std=dim_ff_hidden**-0.5)
+        nn.init.constant_(self.linear_2.bias, 0)
         self.act = nn.SiLU()
         self.dropout = nn.Dropout(dropout)
     def forward(self, x):
@@ -74,8 +78,8 @@ class SConvNetBlock(nn.Module):
 
     def forward(self, x):
         x_ = x
-        x = self.layer_norm(x)
         x = self.spiral_conv(x)
+        x = self.layer_norm(x)
         x = x + x_
 
         x_ = x
@@ -100,7 +104,11 @@ class SConvNet(nn.Module):
         self.devices = devices
         self.vocab_size = vocab_size
         self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
+        nn.init.normal_(self.token_in.weight, std=vocab_size**-0.5)
+        nn.init.constant_(self.token_in.bias, 0)
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
+        nn.init.normal_(self.token_out.weight, std=dim**-0.5)
+        nn.init.constant_(self.token_out.bias, 0)
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
