@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 class FFN(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float, dtype, scale: float):
         super().__init__()
         scale = 1e-2
         self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True, dtype=dtype)
@@ -22,7 +22,7 @@ class FFN(nn.Module):
         return x
 
 class SConv(nn.Module):
-    def __init__(self, dim: int, dim_hidden: int):
+    def __init__(self, dim: int, dim_hidden: int, dropout: float, scale: float):
         super().__init__()
         scale = 1e-2
         self.dim = dim
@@ -32,13 +32,14 @@ class SConv(nn.Module):
         self.linear_out = nn.Linear(dim_hidden, dim, dtype=torch.cfloat, bias=False)
         nn.init.normal_(self.linear_out.weight, std=dim_hidden**-0.5*scale)
         #self.phazor = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
-        self.phazor = nn.Parameter(torch.exp(torch.rand(dim_hidden) * np.pi * 2.0j))
+        self.phazor = nn.Parameter(torch.exp(torch.rand(dim_hidden) * np.pi * 2.0j) * (1-torch.rand(dim_hidden)*1e-3))
         #self.phazor_init = nn.Parameter(torch.randn(dim, 2))
         #self.angle = nn.Parameter(torch.randn(dim))
         #self.angle_init = nn.Parameter(torch.randn(dim))
         #self.act = nn.SiLU()
         self.last_conv = None # (batch, dim)
-        self.last_conv_init = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat)*scale)
+        self.last_conv_init = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
+        self.dropout = nn.Dropout(dropout)
         self.is_refresh = True
 
     # (batch, len, dim) -> (batch, len, dim)
@@ -50,7 +51,7 @@ class SConv(nn.Module):
         #print(f'testtesttest:{self.linear_in.weight.dtype}')
         x = self.linear_in(x)
         if self.last_conv is None:
-            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden).to(x.device)
+            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden)
         else:
             self.last_conv = self.last_conv.detach()
         #angle = self.angle.float() * np.pi
@@ -72,6 +73,7 @@ class SConv(nn.Module):
             self.last_conv = conv_with_past[:,-1,:]
         
         y = self.linear_out(conv_with_past).real
+        y = self.dropout(y)
         return y
 
     def reset_hidden(self):
@@ -84,11 +86,11 @@ class SConv(nn.Module):
         self.is_refresh = is_refresh
 
 class SConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, dtype, scale: float):
         super().__init__()
         self.dtype = dtype
-        self.spiral_conv = SConv(dim, dim_sc_hidden)
-        self.ffn = FFN(dim, dim_ff_hidden, dropout, dtype)
+        self.spiral_conv = SConv(dim, dim_sc_hidden, dropout, scale)
+        self.ffn = FFN(dim, dim_ff_hidden, dropout, dtype, scale)
         self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=dtype)
 
     def forward(self, x):
@@ -122,12 +124,12 @@ class SConvNet(nn.Module):
         self.devices = devices
         self.vocab_size = vocab_size
         self.token_in = nn.Linear(vocab_size, dim, device=devices[0], dtype=dtype)
-        nn.init.normal_(self.token_in.weight, std=vocab_size**-0.5*1e-5)
+        nn.init.normal_(self.token_in.weight, std=vocab_size**-0.5)
         nn.init.constant_(self.token_in.bias, 0)
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
-        nn.init.normal_(self.token_out.weight, std=dim**-0.5*1e-5)
+        nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout, dtype, 1.0) for i in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
