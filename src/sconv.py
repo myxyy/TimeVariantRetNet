@@ -3,12 +3,12 @@ import torch.nn as nn
 import numpy as np
 
 class FFN(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: float, dropout: float, dtype):
         super().__init__()
-        self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True)
+        self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True, dtype=dtype)
         nn.init.normal_(self.linear_1.weight, std=dim**-0.5)
         nn.init.constant_(self.linear_1.bias, 0)
-        self.linear_2 = nn.Linear(dim_ff_hidden, dim, bias=True)
+        self.linear_2 = nn.Linear(dim_ff_hidden, dim, bias=True, dtype=dtype)
         nn.init.normal_(self.linear_2.weight, std=dim_ff_hidden**-0.5)
         nn.init.constant_(self.linear_2.bias, 0)
         self.act = nn.SiLU()
@@ -27,7 +27,7 @@ class SConv(nn.Module):
         self.dim_hidden = dim_hidden
         self.linear_in = nn.Linear(dim, dim_hidden, dtype=torch.cfloat, bias=False)
         self.linear_out = nn.Linear(dim_hidden, dim, dtype=torch.cfloat, bias=False)
-        self.phazor = nn.Parameter(torch.exp(1.0j * torch.rand(dim_hidden) * np.pi * 2.0))
+        self.phazor = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
         #self.phazor_init = nn.Parameter(torch.randn(dim, 2))
         #self.angle = nn.Parameter(torch.randn(dim))
         #self.angle_init = nn.Parameter(torch.randn(dim))
@@ -40,7 +40,6 @@ class SConv(nn.Module):
     def forward(self, x):
         batch = x.shape[0]
         len = x.shape[1]
-        dtype = x.dtype
         x = x.to(torch.cfloat)
         #print(f'testtesttest:{x.dtype}')
         #print(f'testtesttest:{self.linear_in.weight.dtype}')
@@ -66,7 +65,7 @@ class SConv(nn.Module):
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
-        y = self.linear_out(conv_with_past).real.to(dtype)
+        y = self.linear_out(conv_with_past).real
         return y
 
     def reset_hidden(self):
@@ -79,15 +78,18 @@ class SConv(nn.Module):
         self.is_refresh = is_refresh
 
 class SConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, dtype):
         super().__init__()
+        self.dtype = dtype
         self.spiral_conv = SConv(dim, dim_sc_hidden)
-        self.ffn = FFN(dim, dim_ff_hidden, dropout)
-        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False)
+        self.ffn = FFN(dim, dim_ff_hidden, dropout, dtype)
+        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=dtype)
 
     def forward(self, x):
         x_ = x
+        x = x.to(torch.cfloat)
         x = self.spiral_conv(x)
+        x = x.to(self.dtype)
         x = self.layer_norm(x)
         x = x + x_
 
@@ -108,17 +110,17 @@ class SConvNetBlock(nn.Module):
         self.spiral_conv.set_is_refresh(is_refresh)
 
 class SConvNet(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, vocab_size: int, devices):
+    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, vocab_size: int, dtype, devices):
         super().__init__()
         self.devices = devices
         self.vocab_size = vocab_size
-        self.token_in = nn.Linear(vocab_size, dim, device=devices[0])
+        self.token_in = nn.Linear(vocab_size, dim, device=devices[0], dtype=dtype)
         nn.init.normal_(self.token_in.weight, std=vocab_size**-0.5)
         nn.init.constant_(self.token_in.bias, 0)
-        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
+        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout, dtype) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
