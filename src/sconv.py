@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 class FFN(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: float, dropout: float):
@@ -20,16 +21,19 @@ class FFN(nn.Module):
         return x
 
 class SConv(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, dim_hidden: int):
         super().__init__()
         self.dim = dim
-        #self.phazor = nn.Parameter(torch.randn(dim, 2))
+        self.dim_hidden = dim_hidden
+        self.linear_in = nn.Linear(dim, dim_hidden, dtype=torch.cfloat, bias=False)
+        self.linear_out = nn.Linear(dim_hidden, dim, dtype=torch.cfloat, bias=False)
+        self.phazor = nn.Parameter(torch.exp(1.0j * torch.rand(dim_hidden) * np.pi * 2.0))
         #self.phazor_init = nn.Parameter(torch.randn(dim, 2))
-        self.phazor = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
-        self.phazor_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
-        self.act = nn.SiLU()
+        #self.angle = nn.Parameter(torch.randn(dim))
+        #self.angle_init = nn.Parameter(torch.randn(dim))
+        #self.act = nn.SiLU()
         self.last_conv = None # (batch, dim)
-        self.last_conv_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
+        self.last_conv_init = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
         self.is_refresh = True
 
     # (batch, len, dim) -> (batch, len, dim)
@@ -37,19 +41,24 @@ class SConv(nn.Module):
         batch = x.shape[0]
         len = x.shape[1]
         dtype = x.dtype
-        x = x.float()
+        x = x.to(torch.cfloat)
+        #print(f'testtesttest:{x.dtype}')
+        #print(f'testtesttest:{self.linear_in.weight.dtype}')
+        x = self.linear_in(x)
         if self.last_conv is None:
-            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim).to(x.device)
+            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden).to(x.device)
         else:
             self.last_conv = self.last_conv.detach()
-        #phazor = torch.view_as_complex(self.phazor.float())
-        #phazor_init = torch.view_as_complex(self.phazor_init.float())
+        #angle = self.angle.float() * np.pi
+        #phazor = torch.view_as_complex(torch.stack((torch.cos(angle), torch.sin(angle)), dim=1))
+        #angle_init = self.angle_init.float() * np.pi
+        #phazor_init = torch.view_as_complex(torch.stack((torch.cos(angle_init), torch.sin(angle_init)), dim=1))
         phazor = self.phazor
-        phazor_init = self.phazor_init
-        #phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
-        phazor = phazor / (phazor.abs() + 1e-2 * (torch.arange(self.dim, device=x.device) + 1)/self.dim)
+        #phazor_init = self.phazor_init
+        phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
+        #phazor = phazor / (1 + 1e-2 * (torch.arange(self.dim_hidden, device=x.device) + 1)/self.dim)
         phazor_progression = torch.pow(phazor.unsqueeze(0), torch.arange(len, device=x.device).unsqueeze(1)) # (len, dim)
-        filter = phazor_progression * phazor_init.unsqueeze(0)
+        filter = phazor_progression# * phazor_init.unsqueeze(0)
         filter_fft = torch.fft.fft(filter, n=len*2, dim=0) # (len*2, dim)
         x_fft = torch.fft.fft(x, n=len*2, dim=1) # (batch, len*2, dim)
         conv_filter_x = torch.fft.ifft(filter_fft.unsqueeze(0) * x_fft, dim=1).narrow(1,0,len) # (batch, len, dim)
@@ -57,7 +66,7 @@ class SConv(nn.Module):
         if self.is_refresh:
             self.last_conv = conv_with_past[:,-1,:]
         
-        y = conv_with_past.real.to(dtype)
+        y = self.linear_out(conv_with_past).real.to(dtype)
         return y
 
     def reset_hidden(self):
@@ -70,9 +79,9 @@ class SConv(nn.Module):
         self.is_refresh = is_refresh
 
 class SConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dropout: float):
+    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float):
         super().__init__()
-        self.spiral_conv = SConv(dim)
+        self.spiral_conv = SConv(dim, dim_sc_hidden)
         self.ffn = FFN(dim, dim_ff_hidden, dropout)
         self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False)
 
@@ -99,7 +108,7 @@ class SConvNetBlock(nn.Module):
         self.spiral_conv.set_is_refresh(is_refresh)
 
 class SConvNet(nn.Module):
-    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dropout: float, vocab_size: int, devices):
+    def __init__(self, depth: int, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, vocab_size: int, devices):
         super().__init__()
         self.devices = devices
         self.vocab_size = vocab_size
@@ -109,7 +118,7 @@ class SConvNet(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1])
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 

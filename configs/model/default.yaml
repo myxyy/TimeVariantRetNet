@@ -1,7 +1,8 @@
 _target_: sconv.SConvNet
 _partial_: True
-dim: 4096
-depth: 32
-dim_ff_hidden: 8192
+dim: 2048
+depth: 16
+dim_ff_hidden: 4096
+dim_sc_hidden: 4096
 dropout: 0.1
 vocab_size: 256
