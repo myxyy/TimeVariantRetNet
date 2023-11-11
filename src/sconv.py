@@ -32,7 +32,7 @@ class SConv(nn.Module):
         self.linear_out = nn.Linear(dim_hidden, dim, dtype=torch.cfloat, bias=False)
         nn.init.normal_(self.linear_out.weight, std=dim_hidden**-0.5*scale)
         #self.phazor = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
-        self.phazor = nn.Parameter(torch.exp(torch.rand(dim_hidden) * np.pi * 2.0j) * (1-torch.rand(dim_hidden)*1e-3))
+        self.phazor = nn.Parameter(torch.randn(dim_hidden, dtype=torch.cfloat))
         #self.phazor_init = nn.Parameter(torch.randn(dim, 2))
         #self.angle = nn.Parameter(torch.randn(dim))
         #self.angle_init = nn.Parameter(torch.randn(dim))
@@ -61,7 +61,7 @@ class SConv(nn.Module):
         phazor = self.phazor
         #phazor_init = self.phazor_init
         #phazor = phazor / phazor.abs() * torch.exp(-phazor.abs())
-        phazor = phazor / torch.clamp(phazor.abs(), min=1.0)
+        phazor = torch.tanh(phazor.abs()) * torch.exp(1.0j * phazor.angle())
         #phazor = phazor / (1 + 1e-2 * (torch.arange(self.dim_hidden, device=x.device) + 1)/self.dim)
         phazor_progression = torch.pow(phazor.unsqueeze(0), torch.arange(len, device=x.device).unsqueeze(1)) # (len, dim)
         filter = phazor_progression# * phazor_init.unsqueeze(0)
@@ -78,9 +78,6 @@ class SConv(nn.Module):
 
     def reset_hidden(self):
         self.last_conv = None
-
-    def randomize_init(self):
-        self.last_conv = torch.randn(self.dim_hidden, dtype=torch.cfloat, device=self.linear_in.weight.device)
 
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
@@ -111,9 +108,6 @@ class SConvNetBlock(nn.Module):
 
     def reset_hidden(self):
         self.spiral_conv.reset_hidden()
-
-    def randomize_init(self):
-        self.spiral_conv.randomize_init()
 
     def set_is_refresh(self, is_refresh):
         self.spiral_conv.set_is_refresh(is_refresh)
@@ -148,10 +142,6 @@ class SConvNet(nn.Module):
     def reset_hidden(self):
         for block in self.block_list:
             block.reset_hidden()
-
-    def randomize_init(self):
-        for block in self.block_list:
-            block.randomize_init()
 
     def set_is_refresh(self, is_refresh):
         for block in self.block_list:

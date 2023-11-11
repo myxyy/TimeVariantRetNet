@@ -47,6 +47,7 @@ def main(cfg):
         for _ in range(cfg.train_pipeline.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
             for batch in pbar:
+                model.reset_hidden()
                 optimizer.zero_grad()
 
                 text, text_next = batch
