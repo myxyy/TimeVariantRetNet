@@ -86,6 +86,8 @@ class SConvNetBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, dtype, scale: float):
         super().__init__()
         self.dtype = dtype
+        self.linear_sc = nn.Linear(dim, dim, dtype=dtype)
+        self.act = nn.SiLU()
         self.spiral_conv = SConv(dim, dim_sc_hidden, dropout, scale)
         self.ffn = FFN(dim, dim_ff_hidden, dropout, dtype, scale)
         self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=dtype)
@@ -93,15 +95,18 @@ class SConvNetBlock(nn.Module):
     def forward(self, x):
         x_ = x
         x = self.layer_norm(x)
+        y = self.linear_sc(x)
+        y = self.act(y)
+        x = self.layer_norm(x)
         x = x.to(torch.cfloat)
         x = self.spiral_conv(x)
         x = x.to(self.dtype)
-        x = self.layer_norm(x)
-        #x = x + x_
+        x = x * y
+        x = x + x_
 
-        #x_ = x
+        x_ = x
+        x = self.layer_norm(x)
         x = self.ffn(x)
-        #x = self.layer_norm(x)
         x = x + x_
 
         return x
