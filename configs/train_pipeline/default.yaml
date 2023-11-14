@@ -1,7 +1,7 @@
 length: 2048
 batch_size: 16
 max_epochs: 1
-text: "text/wiki.txt"
+text: "text/natsume.txt"
 weight: "weight/weight.ckpt"
 devices:
   - 'cuda:0'

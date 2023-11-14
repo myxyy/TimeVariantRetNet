@@ -1,7 +1,7 @@
 _target_: sconv.SConvNet
 _partial_: True
 dim: 2048
-depth: 32
+depth: 24
 dim_ff_hidden: 4096 
 dim_sc_hidden: 4096
 dropout: 0.1
