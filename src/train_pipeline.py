@@ -24,7 +24,7 @@ def main(cfg):
     model = instantiate(cfg.model)
     devices = cfg.train_pipeline.devices
     model = model(devices=devices)
-    dtype = model.real_dtype
+    dtype = model.dtype
     epochs = 0
     steps = 0
     if ckpt_path is not None:

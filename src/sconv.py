@@ -19,17 +19,12 @@ class FFN(nn.Module):
         return x
 
 class SConv(nn.Module):
-    def __init__(self, dim: int, dim_hidden: int, dtype):
+    def __init__(self, dim: int, dtype):
         super().__init__()
         self.dim = dim
-        self.dim_hidden = dim_hidden
-        self.linear_in = nn.Linear(dim, dim_hidden, dtype=dtype, bias=False)
-        nn.init.normal_(self.linear_in.weight, std=dim**-0.5)
-        self.linear_out = nn.Linear(dim_hidden, dim, dtype=dtype, bias=False)
-        nn.init.normal_(self.linear_out.weight, std=dim_hidden**-0.5)
-        self.phazor = nn.Parameter(torch.randn(dim_hidden, dtype=dtype))
+        self.phazor = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
         self.last_conv = None # (batch, dim)
-        self.last_conv_init = nn.Parameter(torch.randn(dim_hidden, dtype=dtype))
+        self.last_conv_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
         self.is_refresh = True
 
 
@@ -37,14 +32,12 @@ class SConv(nn.Module):
     def forward(self, x):
         batch = x.shape[0]
         len = x.shape[1]
+        dtype = x.dtype
 
-        def cctanh(x): # complex component-wise tanh
-            return torch.view_as_complex(torch.tanh(torch.view_as_real(x)))
-
-        x = self.linear_in(x)
+        x = x.to(torch.cfloat)
         #x = cctanh(x)
         if self.last_conv is None:
-            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim_hidden)
+            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim)
         else:
             self.last_conv = self.last_conv.detach()
         phazor = self.phazor
@@ -59,8 +52,8 @@ class SConv(nn.Module):
             self.last_conv = conv_with_past[:,-1,:]
 
         y = conv_with_past
+        y = y.real.to(dtype)
         #y = cctanh(y)
-        y = self.linear_out(y)
         return y
 
     def reset_hidden(self):
@@ -70,21 +63,18 @@ class SConv(nn.Module):
         self.is_refresh = is_refresh
 
 class SConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dim_sc_hidden: int, dropout: float, real_dtype, complex_dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, dropout: float, dtype):
         super().__init__()
-        self.real_dtype = real_dtype
-        self.complex_dtype = complex_dtype
-        self.spiral_conv = SConv(dim, dim_sc_hidden, complex_dtype)
-        self.ffn = FFN(dim, dim_ff_hidden, real_dtype)
-        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=real_dtype)
+        self.dtype = dtype 
+        self.spiral_conv = SConv(dim, dtype)
+        self.ffn = FFN(dim, dim_ff_hidden, dtype)
+        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=dtype)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_ = x
         x = self.layer_norm(x)
-        x = x.to(self.complex_dtype)
         x = self.spiral_conv(x)
-        x = x.real.to(self.real_dtype)
         x = self.dropout(x)
         x = x + x_
 
@@ -108,25 +98,22 @@ class SConvNet(nn.Module):
         depth: int,
         dim: int,
         dim_ff_hidden: int,
-        dim_sc_hidden: int,
         dropout: float,
         vocab_size: int,
         devices,
-        real_dtype=torch.bfloat16,
-        complex_dtype=torch.cfloat
+        dtype=torch.bfloat16,
     ):
         super().__init__()
         self.devices = devices
-        self.real_dtype = real_dtype
-        self.complex_dtype = complex_dtype
+        self.dtype = dtype
         self.vocab_size = vocab_size
-        self.token_in = nn.Linear(vocab_size, dim, device=devices[0], dtype=real_dtype)
+        self.token_in = nn.Linear(vocab_size, dim, device=devices[0], dtype=dtype)
         nn.init.normal_(self.token_in.weight, std=vocab_size**-0.5)
         nn.init.constant_(self.token_in.bias, 0)
-        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=real_dtype)
+        self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dim_sc_hidden, dropout, real_dtype, complex_dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
