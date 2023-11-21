@@ -20,8 +20,6 @@ def main(cfg):
     vocab_size = 256
     dtype = model.dtype
     temperature = cfg.predict.temperature
-    for p in model.parameters():
-        p.requires_grad = False
 
     num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"#parameter:{num_parameters}")

@@ -68,13 +68,13 @@ class SConvNetBlock(nn.Module):
         self.dtype = dtype 
         self.spiral_conv = SConv(dim, dtype)
         self.ffn = FFN(dim, dim_ff_hidden, dtype)
-        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=False, dtype=dtype)
+        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_ = x
-        x = self.layer_norm(x)
         x = self.spiral_conv(x)
+        x = self.layer_norm(x)
         x = self.dropout(x)
         x = x + x_
 
