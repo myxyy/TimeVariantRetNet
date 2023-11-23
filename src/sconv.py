@@ -22,7 +22,7 @@ class SConv(nn.Module):
     def __init__(self, dim: int, dtype):
         super().__init__()
         self.dim = dim
-        self.phazor = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
+        self.phazor = nn.Parameter(torch.exp(2.0j * np.pi * torch.arange(dim) / dim) * torch.abs(torch.randn(dim)))
         self.last_conv = None # (batch, dim)
         self.last_conv_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
         self.is_refresh = True
@@ -35,7 +35,6 @@ class SConv(nn.Module):
         dtype = x.dtype
 
         x = x.to(torch.cfloat)
-        #x = cctanh(x)
         if self.last_conv is None:
             self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim)
         else:
@@ -53,7 +52,6 @@ class SConv(nn.Module):
 
         y = conv_with_past
         y = y.real.to(dtype)
-        #y = cctanh(y)
         return y
 
     def reset_hidden(self):
@@ -68,18 +66,23 @@ class SConvNetBlock(nn.Module):
         self.dtype = dtype 
         self.spiral_conv = SConv(dim, dtype)
         self.ffn = FFN(dim, dim_ff_hidden, dtype)
-        self.layer_norm = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.layer_norm_ffn_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.sc_elementwise_linear = nn.Parameter(torch.ones(dim, dtype=dtype))
+        self.act = nn.SiLU()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_ = x
+        x = self.layer_norm_sc_in(x)
+        x = self.act(x)
         x = self.spiral_conv(x)
-        x = self.layer_norm(x)
+        x = x * self.sc_elementwise_linear
         x = self.dropout(x)
         x = x + x_
 
         x_ = x
-        x = self.layer_norm(x)
+        x = self.layer_norm_ffn_in(x)
         x = self.ffn(x)
         x = self.dropout(x)
         x = x + x_
@@ -114,6 +117,7 @@ class SConvNet(nn.Module):
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
+        self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
         for i, block in enumerate(self.block_list):
             block.to(devices[self.device_index(i)])
 
@@ -126,6 +130,7 @@ class SConvNet(nn.Module):
             if i > 0 and self.device_index(i) != self.device_index(i-1):
                 x = x.to(self.devices[self.device_index(i)])
             x = block(x)
+        x = self.layer_norm_last(x)
         x = self.token_out(x)
         return x 
 
@@ -147,7 +152,7 @@ class SConvNet(nn.Module):
         for blist in blistlist:
             mlist.append(nn.Sequential(*blist))
         mlist[0] = nn.Sequential(self.token_in, mlist[0])
-        mlist[-1] = nn.Sequential(mlist[-1], self.token_out)
+        mlist[-1] = nn.Sequential(mlist[-1], self.layer_norm_last, self.token_out)
         return mlist
         
     
