@@ -103,14 +103,12 @@ class SConvNetBlock(nn.Module):
         self.dtype = dtype 
         self.constant_conv = CConv(dim, clen, dtype)
         self.spiral_conv = SConv(dim, dtype)
-        self.ffn = FFN(dim, dim_ff_hidden, dtype)
+        self.ffn_cc = FFN(dim, dim_ff_hidden, dtype)
+        self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
         self.layer_norm_cc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.layer_norm_cc_out = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.layer_norm_sc_out = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.layer_norm_ffn_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        #self.cc_elementwise_linear = nn.Parameter(torch.ones(dim, dtype=dtype))
-        #self.sc_elementwise_linear = nn.Parameter(torch.ones(dim, dtype=dtype))
+        self.layer_norm_ffn_cc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.act = nn.SiLU()
         self.dropout = nn.Dropout(dropout)
 
@@ -119,8 +117,12 @@ class SConvNetBlock(nn.Module):
         x = self.layer_norm_cc_in(x)
         x = self.act(x)
         x = self.constant_conv(x)
-        #x = x * self.cc_elementwise_linear
-        x = self.layer_norm_cc_out(x)
+        x = self.dropout(x)
+        x = x + x_
+
+        x_ = x
+        x = self.layer_norm_ffn_cc_in(x)
+        x = self.ffn_cc(x)
         x = self.dropout(x)
         x = x + x_
 
@@ -128,14 +130,12 @@ class SConvNetBlock(nn.Module):
         x = self.layer_norm_sc_in(x)
         x = self.act(x)
         x = self.spiral_conv(x)
-        #x = x * self.sc_elementwise_linear
-        x = self.layer_norm_sc_out(x)
         x = self.dropout(x)
         x = x + x_
 
         x_ = x
-        x = self.layer_norm_ffn_in(x)
-        x = self.ffn(x)
+        x = self.layer_norm_ffn_sc_in(x)
+        x = self.ffn_sc(x)
         x = self.dropout(x)
         x = x + x_
 
