@@ -3,5 +3,6 @@ _partial_: True
 dim: 4096
 depth: 24
 dim_ff_hidden: 16384
+clen: 128
 dropout: 0.1
 vocab_size: 256
