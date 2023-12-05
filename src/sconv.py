@@ -154,7 +154,7 @@ class SConvNet(nn.Module):
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
         for i, block in enumerate(self.block_list):
-            block.to(devices[self.device_index(i)])
+            self.block_list[i] = block.to(devices[self.device_index(i)])
 
     def device_index(self, i):
         return (len(self.devices) * i) // len(self.block_list)
