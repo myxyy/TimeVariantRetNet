@@ -3,6 +3,7 @@ batch_size: 16
 max_epochs: 100
 text: "text/text.txt"
 weight: "weight/weight.ckpt"
+lr: 0.00001
 devices:
   - 'cuda:0'
   - 'cuda:1'
