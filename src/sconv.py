@@ -40,7 +40,7 @@ class SConv(nn.Module):
         else:
             self.last_conv = self.last_conv.detach()
         phazor = self.phazor
-        phazor = torch.tanh(phazor.abs()) * torch.exp(1.0j * phazor.angle())
+        phazor = torch.exp(-phazor.real*phazor.real-phazor.imag*phazor.imag) * torch.exp(1.0j * phazor.angle())
         phazor_progression = torch.pow(phazor.unsqueeze(0), torch.arange(len, device=x.device).unsqueeze(1)) # (len, dim)
         filter = phazor_progression * self.phazor_init.unsqueeze(0)
         filter_fft = torch.fft.fft(filter, n=len*2, dim=0) # (len*2, dim)
@@ -106,13 +106,16 @@ class SConvNetBlock(nn.Module):
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.act = nn.SiLU()
+        self.fc = nn.Linear(dim, dim)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_ = x
         x = self.layer_norm_sc_in(x)
-        x = self.act(x)
+        y = self.fc(x)
+        y = self.act(y)
         x = self.spiral_conv(x)
+        x = x * y
         x = self.dropout(x)
         x = x + x_
 
