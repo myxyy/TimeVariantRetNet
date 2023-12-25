@@ -52,6 +52,8 @@ def main(cfg):
                 current_len += context_len
                 start += context_len
 
+        out_last = 0
+
         while current_len < out_length:
             model.set_is_refresh(current_len % context_len == 0)
             x = prompt_beam[:,start:start+context_len]
@@ -65,12 +67,13 @@ def main(cfg):
 
             predict = prompt_beam[0]
             predict = predict.cpu().numpy().astype(dtype='uint8')
-            predict = predict.tobytes().decode('utf-8', 'replace')
+            chars = predict[out_last:].tobytes().decode('utf-8', 'replace')
+
+            if '\ufffd' not in chars:
+                print(chars, end='', flush=True)
+                out_last = current_len + 1
 
             current_len += 1
-
-            print(f'{current_len} Bytes')
-            print(predict)
 
             if current_len % context_len == 1 or context_len == 1:
                 start = start + context_len
@@ -83,6 +86,7 @@ def main(cfg):
     while True:
         prompt = input('prompt:')
         predict(prompt)
+        print('\n')
 
 if __name__ == '__main__':
     main()
