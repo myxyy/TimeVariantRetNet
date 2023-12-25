@@ -37,7 +37,7 @@ def main(cfg):
     print(f"#parameter:{num_parameters}")
 
     model_pipe = nn.Sequential(*model.module_list())
-    model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size)
+    model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
     model_pipe.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train_pipeline.lr)
     def save():
