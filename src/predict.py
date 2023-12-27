@@ -68,7 +68,8 @@ def main(cfg):
 
             predict = prompt_beam[0]
             predict = predict.cpu().numpy()
-            chars = tokenizer.decode(predict[out_last:])
+            chars = tokenizer.decode(predict[out_last:current_len+1].tolist())
+            
 
             if '\ufffd' not in chars:
                 print(chars, end='', flush=True)
@@ -79,9 +80,9 @@ def main(cfg):
                 while out_last_skip_error < current_len:
                     out_last_next = out_last_skip_error + 1
                     while out_last_next < current_len:
-                        chars = tokenizer.decode(predict[out_last_skip_error:out_last_next])
+                        chars = tokenizer.decode(predict[out_last_skip_error:out_last_next].tolist())
                         if '\ufffd' not in chars:
-                            chars = tokenizer.decode(predict[out_last:out_last_next])
+                            chars = tokenizer.decode(predict[out_last:out_last_next].tolist())
                             print(chars, end='', flush=True)
                             is_break = True
                             out_last = out_last_next
@@ -100,13 +101,13 @@ def main(cfg):
             if current_len % context_len == 1 or context_len == 1:
                 start = start + context_len
 
-        chars = tokenizer.decode(predict[out_last:])
+        chars = tokenizer.decode(predict[out_last:].tolist())
         print(chars, end='', flush=True)
 
 
         predict = prompt_beam[0]
         predict = predict.cpu().numpy()
-        predict = tokenizer.decode(predict)
+        predict = tokenizer.decode(predict.tolist())
         return predict
 
     while True:

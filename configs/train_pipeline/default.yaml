@@ -1,5 +1,5 @@
-length: 2048
-batch_size: 16
+length: 1024
+batch_size: 8
 max_epochs: 100
 text: "text/text.txt"
 weight: "weight/weight.ckpt"
