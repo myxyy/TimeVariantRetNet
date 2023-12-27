@@ -11,13 +11,14 @@ np.set_printoptions(threshold=np.inf)
 @hydra.main(version_base=None, config_path="../configs/", config_name="config")
 def main(cfg):
     devices = cfg.predict.devices
+    tokenizer = instantiate(cfg.tokenizer)
     model = instantiate(cfg.model)
-    model = model(devices=devices)
+    vocab_size = tokenizer.num_tokens()
+    model = model(devices=devices, vocab_size=vocab_size)
     model.load_state_dict(torch.load(cfg.predict.weight)['state_dict'])
     model.eval()
     context_len = cfg.predict.context_len
     out_length = cfg.predict.max_len
-    vocab_size = 256
     dtype = model.dtype
     temperature = cfg.predict.temperature
 
@@ -25,7 +26,7 @@ def main(cfg):
     print(f"#parameter:{num_parameters}")
 
     def predict(prompt):
-        prompt = torch.from_numpy(np.array([i for i in prompt.encode('utf-8')]).astype(int)).clone().to(devices[0])
+        prompt = torch.from_numpy(np.array(tokenizer.encode(prompt)).astype(int)).clone().to(devices[0])
         prompt_len = len(prompt)
         prompt = torch.nn.functional.pad(prompt, (0, out_length-prompt_len), 'constant', 0)
 
@@ -66,8 +67,8 @@ def main(cfg):
             prompt_beam[:,current_len] = predict_beam_i
 
             predict = prompt_beam[0]
-            predict = predict.cpu().numpy().astype(dtype='uint8')
-            chars = predict[out_last:].tobytes().decode('utf-8', 'replace')
+            predict = predict.cpu().numpy()
+            chars = tokenizer.decode(predict[out_last:])
 
             if '\ufffd' not in chars:
                 print(chars, end='', flush=True)
@@ -78,9 +79,9 @@ def main(cfg):
                 while out_last_skip_error < current_len:
                     out_last_next = out_last_skip_error + 1
                     while out_last_next < current_len:
-                        chars = predict[out_last_skip_error:out_last_next].tobytes().decode('utf-8', 'replace')
+                        chars = tokenizer.decode(predict[out_last_skip_error:out_last_next])
                         if '\ufffd' not in chars:
-                            chars = predict[out_last:out_last_next].tobytes().decode('utf-8', 'replace')
+                            chars = tokenizer.decode(predict[out_last:out_last_next])
                             print(chars, end='', flush=True)
                             is_break = True
                             out_last = out_last_next
@@ -99,13 +100,13 @@ def main(cfg):
             if current_len % context_len == 1 or context_len == 1:
                 start = start + context_len
 
-        chars = predict[out_last:].tobytes().decode('utf-8', 'replace')
+        chars = tokenizer.decode(predict[out_last:])
         print(chars, end='', flush=True)
 
 
         predict = prompt_beam[0]
-        predict = predict.cpu().numpy().astype(dtype='uint8')
-        predict = predict.tobytes().decode('utf-8', 'replace')
+        predict = predict.cpu().numpy()
+        predict = tokenizer.decode(predict)
         return predict
 
     while True:

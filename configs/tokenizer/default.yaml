@@ -1,1 +1,1 @@
-_target_: tokenizer.byte_tokenizer.ByteTokenizer
+_target_: src.tokenizer.byte_tokenizer.ByteTokenizer

@@ -1,4 +1,4 @@
-from tokenizer import Tokenizer
+from .tokenizer import Tokenizer
 import numpy as np
 import sentencepiece as spm
 

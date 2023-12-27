@@ -1,9 +1,10 @@
 [tool.poetry]
-name = "mnisttest"
+name = "SConv"
 version = "0.1.0"
 description = ""
 authors = ["myxy"]
 readme = "README.md"
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
