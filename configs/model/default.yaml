@@ -1,4 +1,4 @@
-_target_: sconv.SConvNet
+_target_: src.model.sconv.SConvNet
 _partial_: True
 dim: 4096
 depth: 24

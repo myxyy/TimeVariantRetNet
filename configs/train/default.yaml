@@ -1,7 +1,0 @@
-length: 4096
-max_epochs: 10
-text: "text/text.txt"
-weight: "weight/weight.pth"
-devices:
-  - 'cuda:0'
-  - 'cuda:1'
