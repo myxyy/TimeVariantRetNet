@@ -17,6 +17,7 @@ def main(cfg):
     torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1)
     transforms = torchvision.transforms.Compose([])
     tokenizer = instantiate(cfg.tokenizer)
+    vocab_size = tokenizer.num_tokens()
     dataset = TextDataset(cfg.train_pipeline.text, cfg.train_pipeline.length, tokenizer, transforms)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train_pipeline.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
     ckpt_path = cfg.train_pipeline.weight
@@ -24,7 +25,7 @@ def main(cfg):
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
     model = instantiate(cfg.model)
     devices = cfg.train_pipeline.devices
-    model = model(devices=devices, vocab_size=tokenizer.num_tokens())
+    model = model(devices=devices, vocab_size=vocab_size)
     dtype = model.dtype
     epochs = 0
     steps = 0
@@ -53,11 +54,11 @@ def main(cfg):
                 text, text_next = batch
                 text = text.to(devices[0])
                 text_next = text_next.to(devices[-1])
-                text = nn.functional.one_hot(text.long(), 256).to(dtype)
+                text = nn.functional.one_hot(text.long(), vocab_size).to(dtype)
 
                 text_hat = model_pipe(text).local_value()
 
-                loss = nn.CrossEntropyLoss()(text_hat.view(-1,256), text_next.view(-1).long())
+                loss = nn.CrossEntropyLoss()(text_hat.view(-1,vocab_size), text_next.view(-1).long())
  
                 loss.backward()
                 optimizer.step()
