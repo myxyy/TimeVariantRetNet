@@ -3,3 +3,4 @@ defaults:
   - train: default.yaml
   - train_pipeline: default.yaml
   - predict: default.yaml
+  - tokenizer: default.yaml

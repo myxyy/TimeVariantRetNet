@@ -4,4 +4,3 @@ dim: 4096
 depth: 24
 dim_ff_hidden: 8192
 dropout: 0.1
-vocab_size: 256
