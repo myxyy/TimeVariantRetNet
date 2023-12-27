@@ -72,11 +72,36 @@ def main(cfg):
             if '\ufffd' not in chars:
                 print(chars, end='', flush=True)
                 out_last = current_len + 1
+            elif current_len - out_last > 16:
+                is_break = False
+                out_last_skip_error = out_last
+                while out_last_skip_error < current_len:
+                    out_last_next = out_last_skip_error + 1
+                    while out_last_next < current_len:
+                        chars = predict[out_last_skip_error:out_last_next].tobytes().decode('utf-8', 'replace')
+                        if '\ufffd' not in chars:
+                            chars = predict[out_last:out_last_next].tobytes().decode('utf-8', 'replace')
+                            print(chars, end='', flush=True)
+                            is_break = True
+                            out_last = out_last_next
+                            break
+                        else:
+                            out_last_next += 1
+                    if is_break:
+                        break
+                    else:
+                        out_last_skip_error += 1
+                        
+
 
             current_len += 1
 
             if current_len % context_len == 1 or context_len == 1:
                 start = start + context_len
+
+        chars = predict[out_last:].tobytes().decode('utf-8', 'replace')
+        print(chars, end='', flush=True)
+
 
         predict = prompt_beam[0]
         predict = predict.cpu().numpy().astype(dtype='uint8')
