@@ -3,13 +3,23 @@ import torch.nn as nn
 import numpy
 from torch.utils.data import Dataset
 from typing import Tuple, Literal
+from tqdm import tqdm
 
 class TextDataset(Dataset):
     def __init__(self, path: str, size: int, tokenizer, transforms=None) -> None:
         super().__init__()
         self.size = size
         self.transforms = transforms
-        self.text = numpy.array(tokenizer.encode(open(path, 'r', encoding='utf-8').read()))
+        print('loading...')
+        text_raw = open(path, 'r', encoding='utf-8').read()
+        i = 0
+        chunk_size = 2**26
+        chunk_list = []
+        print('tokenizing...')
+        for i in tqdm(range(len(text_raw)//chunk_size+1)):
+            chunk_list.append(tokenizer.encode(text_raw[i*chunk_size:(i+1)*chunk_size].lower()))
+        print('merging...')
+        self.text = numpy.array([token for chunk in chunk_list for token in chunk])
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         data = self.text[index*self.size:(index+1)*self.size]
