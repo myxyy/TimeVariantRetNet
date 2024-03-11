@@ -1,4 +1,4 @@
-length: 2048
+length: 1024
 batch_size: 8
 max_epochs: 2
 text: "text/text.txt"
