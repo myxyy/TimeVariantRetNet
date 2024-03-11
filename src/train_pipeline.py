@@ -64,9 +64,9 @@ def main(cfg):
                 optimizer.step()
                 pbar.set_postfix(loss=loss.item())
                 steps += 1
-            save()
             steps = 0
             epochs += 1
+            save()
     except KeyboardInterrupt:
         save()
         print(f'KeyboardInterrupted')
