@@ -106,7 +106,7 @@ class SConvNetBlock(nn.Module):
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.act = nn.SiLU()
-        self.fc = nn.Linear(dim, dim)
+        self.fc = nn.Linear(dim, dim, dtype=dtype)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):

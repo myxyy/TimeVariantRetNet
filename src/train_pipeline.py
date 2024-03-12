@@ -34,8 +34,8 @@ def main(cfg):
         model.load_state_dict(ckpt['state_dict'])
         epochs = ckpt['epochs']
         steps = ckpt['steps']
+        del ckpt
 
-    del ckpt
     torch.cuda.empty_cache()
 
     num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
