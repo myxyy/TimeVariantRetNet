@@ -1,7 +1,7 @@
 _target_: src.model.sconv.SConvNet
 _partial_: True
 dim: 4096
-depth: 64
+depth: 80
 dim_ff_hidden: 8192
 dropout: 0.1
 dtype:
