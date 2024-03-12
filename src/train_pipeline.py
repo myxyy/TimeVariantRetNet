@@ -23,12 +23,12 @@ def main(cfg):
     ckpt_path = cfg.train_pipeline.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
-    model = instantiate(cfg.model)
     devices = cfg.train_pipeline.devices
-    model = model(devices=devices, vocab_size=vocab_size)
 
     if ckpt_path is not None:
         ckpt = torch.load(ckpt_path)
+        model = instantiate(ckpt['model'])
+        model = model(devices=devices, vocab_size=vocab_size)
         model.load_state_dict(ckpt['state_dict'])
         epochs = ckpt['epochs']
         steps = ckpt['steps']
@@ -36,6 +36,8 @@ def main(cfg):
         optimizer.load_state_dict(ckpt['optimizer'])
         del ckpt
     else:
+        model = instantiate(cfg.model)
+        model = model(devices=devices, vocab_size=vocab_size)
         epochs = 0
         steps = 0
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train_pipeline.lr)
@@ -51,7 +53,13 @@ def main(cfg):
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
     model_pipe.train()
     def save():
-        torch.save({'state_dict': model.state_dict(), 'steps': steps, 'epochs': epochs, 'optimizer': optimizer.state_dict()}, cfg.train_pipeline.weight)
+        torch.save({
+            'state_dict': model.state_dict(),
+            'steps': steps,
+            'epochs': epochs,
+            'optimizer': optimizer.state_dict(),
+            'model': cfg.model,
+        }, cfg.train_pipeline.weight)
     try:
         for _ in range(cfg.train_pipeline.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)

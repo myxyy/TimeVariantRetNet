@@ -11,11 +11,12 @@ np.set_printoptions(threshold=np.inf)
 @hydra.main(version_base=None, config_path="../configs/", config_name="config")
 def main(cfg):
     devices = cfg.predict.devices
+    ckpt = torch.load(cfg.predict.weight)
     tokenizer = instantiate(cfg.tokenizer)
-    model = instantiate(cfg.model)
+    model = instantiate(ckpt['model'])
     vocab_size = tokenizer.num_tokens()
     model = model(devices=devices, vocab_size=vocab_size)
-    model.load_state_dict(torch.load(cfg.predict.weight)['state_dict'])
+    model.load_state_dict(ckpt['state_dict'])
     model.eval()
     context_len = cfg.predict.context_len
     out_length = cfg.predict.max_len
