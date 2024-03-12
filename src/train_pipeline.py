@@ -35,6 +35,9 @@ def main(cfg):
         epochs = ckpt['epochs']
         steps = ckpt['steps']
 
+    del ckpt
+    torch.cuda.empty_cache()
+
     num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"#parameter:{num_parameters}")
 
