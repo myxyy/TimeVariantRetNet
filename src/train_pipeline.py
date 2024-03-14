@@ -53,6 +53,7 @@ def main(cfg):
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
     model_pipe.train()
     def save():
+        print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
         torch.save({
             'state_dict': model.state_dict(),
             'steps': steps,
@@ -64,6 +65,8 @@ def main(cfg):
         for _ in range(cfg.train_pipeline.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
             for batch in pbar:
+                if steps % cfg.train_pipeline.save_every_n_steps == 0:
+                    save()
                 model.reset_hidden()
                 optimizer.zero_grad()
 
@@ -84,9 +87,8 @@ def main(cfg):
             epochs += 1
             save()
     except KeyboardInterrupt:
-        save()
         print(f'KeyboardInterrupted')
-        print(f'steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
+        save()
 
 
 if __name__ == '__main__':
