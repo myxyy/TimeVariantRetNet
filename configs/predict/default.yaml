@@ -4,3 +4,6 @@ max_len: 1024
 temperature: 1.0
 devices:
   - 'cuda:0'
+  - 'cuda:1'
+  - 'cuda:2'
+  - 'cuda:3'

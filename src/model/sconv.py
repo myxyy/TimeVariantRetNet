@@ -156,11 +156,16 @@ class SConvNet(nn.Module):
         nn.init.constant_(self.token_out.bias, 0)
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
+
+        self.num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters() if p.requires_grad)
+        self.num_parameters_per_block = sum(p.numel() for p in self.block_list[0].parameters() if p.requires_grad)
+
         for i, block in enumerate(self.block_list):
             self.block_list[i] = block.to(devices[self.device_index(i)])
 
     def device_index(self, i):
-        return (len(self.devices) * i) // len(self.block_list)
+        return (int)((len(self.devices) * ((i+1) * self.num_parameters_per_block + self.num_parameters_token_in)) / self.num_parameters)
 
     def forward(self, x):
         x = self.token_in(x)
