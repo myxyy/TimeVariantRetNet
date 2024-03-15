@@ -55,10 +55,10 @@ def main(cfg):
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
     model_pipe.train()
 
-    backup_model_state_dict = model.state_dict().copy()
+    backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
     backup_steps = steps
     backup_epochs = epochs
-    backup_optimizer_state_dict = optimizer.state_dict().copy()
+    backup_optimizer_state_dict = {k: v for k, v in optimizer.state_dict().items()}
 
     def save():
         print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
@@ -88,10 +88,10 @@ def main(cfg):
                     save()
                 if steps % cfg.train_pipeline.backup_every_n_steps == 0:
                     #print('backup...')
-                    backup_model_state_dict = model.state_dict().copy()
+                    backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
                     backup_steps = steps
                     backup_epochs = epochs
-                    backup_optimizer_state_dict = optimizer.state_dict().copy()
+                    backup_optimizer_state_dict = {k: v for k, v in optimizer.state_dict().items()}
                 model.reset_hidden()
                 optimizer.zero_grad()
 
