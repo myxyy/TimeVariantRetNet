@@ -25,6 +25,8 @@ def main(cfg):
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
     devices = cfg.train_pipeline.devices
 
+    print('loading model...')
+
     if ckpt_path is not None:
         ckpt = torch.load(ckpt_path)
         model = instantiate(ckpt['model'])
@@ -52,6 +54,12 @@ def main(cfg):
     model_pipe = nn.Sequential(*model.module_list())
     model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
     model_pipe.train()
+
+    backup_model_state_dict = model.state_dict().copy()
+    backup_steps = steps
+    backup_epochs = epochs
+    backup_optimizer_state_dict = optimizer.state_dict().copy()
+
     def save():
         print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
         torch.save({
@@ -61,12 +69,29 @@ def main(cfg):
             'optimizer': optimizer.state_dict(),
             'model': cfg.model,
         }, cfg.train_pipeline.weight)
+
+    def save_backup():
+        print(f'saving... steps:{backup_steps}/{len(dataloader)} epochs:{backup_epochs}/{cfg.train_pipeline.max_epochs}')
+        torch.save({
+            'state_dict': backup_model_state_dict,
+            'steps': backup_steps,
+            'epochs': backup_epochs,
+            'optimizer': backup_optimizer_state_dict,
+            'model': cfg.model,
+        }, cfg.train_pipeline.weight)
+
     try:
         for _ in range(cfg.train_pipeline.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
             for batch in pbar:
                 if steps % cfg.train_pipeline.save_every_n_steps == 0:
                     save()
+                if steps % cfg.train_pipeline.backup_every_n_steps == 0:
+                    #print('backup...')
+                    backup_model_state_dict = model.state_dict().copy()
+                    backup_steps = steps
+                    backup_epochs = epochs
+                    backup_optimizer_state_dict = optimizer.state_dict().copy()
                 model.reset_hidden()
                 optimizer.zero_grad()
 
@@ -88,7 +113,7 @@ def main(cfg):
             save()
     except KeyboardInterrupt:
         print(f'KeyboardInterrupted')
-        save()
+        save_backup()
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ length: 1024
 batch_size: 16
 max_epochs: 2
 save_every_n_steps: 10000
+backup_every_n_steps: 100
 text: "text/text.txt"
 weight: "weight/weight.ckpt"
 lr: 0.00001
