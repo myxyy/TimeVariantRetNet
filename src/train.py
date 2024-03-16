@@ -18,12 +18,12 @@ def main(cfg):
     transforms = torchvision.transforms.Compose([])
     tokenizer = instantiate(cfg.tokenizer)
     vocab_size = tokenizer.num_tokens()
-    dataset = TextDataset(cfg.train_pipeline.text, cfg.train_pipeline.length, tokenizer, transforms)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train_pipeline.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
-    ckpt_path = cfg.train_pipeline.weight
+    dataset = TextDataset(cfg.train.text, cfg.train.length, tokenizer, transforms)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
+    ckpt_path = cfg.train.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
-    devices = cfg.train_pipeline.devices
+    devices = cfg.train.devices
 
     print('loading model...')
 
@@ -34,7 +34,7 @@ def main(cfg):
         model.load_state_dict(ckpt['state_dict'])
         epochs = ckpt['epochs']
         steps = ckpt['steps']
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train_pipeline.lr)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.lr)
         optimizer.load_state_dict(ckpt['optimizer'])
         del ckpt
     else:
@@ -42,7 +42,7 @@ def main(cfg):
         model = model(devices=devices, vocab_size=vocab_size)
         epochs = 0
         steps = 0
-        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train_pipeline.lr)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.lr)
 
     dtype = model.dtype
 
@@ -52,7 +52,7 @@ def main(cfg):
     print(f"#parameter:{num_parameters}")
 
     model_pipe = nn.Sequential(*model.module_list())
-    model_pipe = Pipe(model_pipe, chunks=cfg.train_pipeline.batch_size, checkpoint='except_last')
+    model_pipe = Pipe(model_pipe, chunks=cfg.train.batch_size, checkpoint='except_last')
     model_pipe.train()
 
     backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
@@ -61,32 +61,32 @@ def main(cfg):
     backup_optimizer_state_dict = {k: v for k, v in optimizer.state_dict().items()}
 
     def save():
-        print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train_pipeline.max_epochs}')
+        print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train.max_epochs}')
         torch.save({
             'state_dict': model.state_dict(),
             'steps': steps,
             'epochs': epochs,
             'optimizer': optimizer.state_dict(),
             'model': cfg.model,
-        }, cfg.train_pipeline.weight)
+        }, cfg.train.weight)
 
     def save_backup():
-        print(f'saving... steps:{backup_steps}/{len(dataloader)} epochs:{backup_epochs}/{cfg.train_pipeline.max_epochs}')
+        print(f'saving... steps:{backup_steps}/{len(dataloader)} epochs:{backup_epochs}/{cfg.train.max_epochs}')
         torch.save({
             'state_dict': backup_model_state_dict,
             'steps': backup_steps,
             'epochs': backup_epochs,
             'optimizer': backup_optimizer_state_dict,
             'model': cfg.model,
-        }, cfg.train_pipeline.weight)
+        }, cfg.train.weight)
 
     try:
-        for _ in range(cfg.train_pipeline.max_epochs - epochs):
+        for _ in range(cfg.train.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
             for batch in pbar:
-                if steps % cfg.train_pipeline.save_every_n_steps == 0:
+                if steps % cfg.train.save_every_n_steps == 0:
                     save()
-                if steps % cfg.train_pipeline.backup_every_n_steps == 0:
+                if steps % cfg.train.backup_every_n_steps == 0:
                     #print('backup...')
                     backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
                     backup_steps = steps

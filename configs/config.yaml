@@ -1,5 +1,5 @@
 defaults:
   - model: default.yaml
-  - train_pipeline: default.yaml
+  - train: default.yaml
   - predict: default.yaml
   - tokenizer: default.yaml
