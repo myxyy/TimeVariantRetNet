@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 class Tokenizer(ABC):
     @abstractmethod
-    def num_tokens():
+    def vocab_size(self):
         raise NotImplementedError
 
     @abstractmethod

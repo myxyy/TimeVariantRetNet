@@ -2,4 +2,4 @@ defaults:
   - model: default.yaml
   - train: default.yaml
   - predict: default.yaml
-  - tokenizer: default.yaml
+  - tokenizer: elyza.yaml

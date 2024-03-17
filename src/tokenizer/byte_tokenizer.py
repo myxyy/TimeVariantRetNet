@@ -2,7 +2,8 @@ from .tokenizer import Tokenizer
 import numpy as np
 
 class ByteTokenizer(Tokenizer):
-    def num_tokens(self):
+    @property
+    def vocab_size(self):
         return 256
 
     def encode(self, text):

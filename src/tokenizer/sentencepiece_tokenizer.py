@@ -6,7 +6,8 @@ class SentencePieceTokenizer(Tokenizer):
     def __init__(self, model_path):
         self.sp = spm.SentencePieceProcessor(model_file=model_path)
 
-    def num_tokens(self):
+    @property
+    def vocab_size(self):
         return self.sp.get_piece_size()
 
     def encode(self, text):

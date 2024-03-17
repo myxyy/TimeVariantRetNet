@@ -19,7 +19,7 @@ def main(cfg):
     torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1)
     transforms = torchvision.transforms.Compose([])
     tokenizer = instantiate(cfg.tokenizer)
-    vocab_size = tokenizer.num_tokens()
+    vocab_size = tokenizer.vocab_size
     dataset = TextDataset(cfg.train.text, cfg.train.length, tokenizer, transforms)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
     ckpt_path = cfg.train.weight
