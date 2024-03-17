@@ -9,6 +9,8 @@ import hydra
 from hydra.utils import instantiate
 from tqdm import tqdm
 from torch.distributed.pipeline.sync import Pipe
+from model.sconv import SConvNet
+import copy
 
 @hydra.main(version_base=None, config_path="../configs/", config_name="config")
 def main(cfg):
@@ -30,7 +32,7 @@ def main(cfg):
     if ckpt_path is not None:
         ckpt = torch.load(ckpt_path)
         model = instantiate(ckpt['model'])
-        model = model(devices=devices, vocab_size=vocab_size)
+        model: SConvNet = model(devices=devices, vocab_size=vocab_size)
         model.load_state_dict(ckpt['state_dict'])
         epochs = ckpt['epochs']
         steps = ckpt['steps']
@@ -39,7 +41,7 @@ def main(cfg):
         del ckpt
     else:
         model = instantiate(cfg.model)
-        model = model(devices=devices, vocab_size=vocab_size)
+        model: SConvNet = model(devices=devices, vocab_size=vocab_size)
         epochs = 0
         steps = 0
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.lr)
@@ -55,10 +57,13 @@ def main(cfg):
     model_pipe = Pipe(model_pipe, chunks=cfg.train.batch_size, checkpoint='except_last')
     model_pipe.train()
 
-    backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
+    def find_tensor_and_transfer(d):
+        return {k: v.cpu() if isinstance(v, torch.Tensor) else find_tensor_and_transfer(v) for k, v in d.items()} if isinstance(d, dict) else d
+
+    backup_model_state_dict = copy.deepcopy(find_tensor_and_transfer(model.state_dict()))
     backup_steps = steps
     backup_epochs = epochs
-    backup_optimizer_state_dict = {k: v for k, v in optimizer.state_dict().items()}
+    backup_optimizer_state_dict = copy.deepcopy(find_tensor_and_transfer(optimizer.state_dict()))
 
     def save():
         print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train.max_epochs}')
@@ -80,6 +85,8 @@ def main(cfg):
             'model': cfg.model,
         }, cfg.train.weight)
 
+    model.set_is_refresh(False)
+
     try:
         for _ in range(cfg.train.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
@@ -88,11 +95,11 @@ def main(cfg):
                     save()
                 if steps % cfg.train.backup_every_n_steps == 0:
                     #print('backup...')
-                    backup_model_state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
+                    backup_model_state_dict = copy.deepcopy(find_tensor_and_transfer(model.state_dict()))
                     backup_steps = steps
                     backup_epochs = epochs
-                    backup_optimizer_state_dict = {k: v for k, v in optimizer.state_dict().items()}
-                model.reset_hidden()
+                    backup_optimizer_state_dict = copy.deepcopy(find_tensor_and_transfer(optimizer.state_dict()))
+
                 optimizer.zero_grad()
 
                 text, text_next = batch
