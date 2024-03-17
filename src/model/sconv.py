@@ -143,6 +143,7 @@ class SConvNet(nn.Module):
         vocab_size: int,
         devices,
         dtype=torch.float,
+        token_in_out_parameter_corr = 3.0,
     ):
         super().__init__()
         self.devices = devices
@@ -157,15 +158,18 @@ class SConvNet(nn.Module):
         self.block_list = nn.ModuleList([SConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
-        self.num_parameters = sum(p.numel() for p in self.parameters())
+        self.token_in_out_parameter_corr = token_in_out_parameter_corr
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())
         self.num_parameters_per_block = sum(p.numel() for p in self.block_list[0].parameters())
+        self.num_parameters_layer_norm_last = sum(p.numel() for p in self.layer_norm_last.parameters())
+        self.num_parameters_token_out = sum(p.numel() for p in self.token_out.parameters())
+        self.num_parameters_corr = (self.num_parameters_per_block * depth) + self.num_parameters_layer_norm_last + (self.num_parameters_token_in + self.num_parameters_token_out) * self.token_in_out_parameter_corr
 
         for i, block in enumerate(self.block_list):
             self.block_list[i] = block.to(devices[self.device_index(i)])
 
     def device_index(self, i):
-        return (int)((len(self.devices) * (i * self.num_parameters_per_block + self.num_parameters_token_in)) / self.num_parameters)
+        return (int)((len(self.devices) * (i * self.num_parameters_per_block + self.num_parameters_token_in * self.token_in_out_parameter_corr)) / self.num_parameters_corr)
 
     def forward(self, x):
         x = self.token_in(x)
