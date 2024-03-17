@@ -20,7 +20,7 @@ def main(cfg):
     transforms = torchvision.transforms.Compose([])
     tokenizer = instantiate(cfg.tokenizer)
     vocab_size = tokenizer.vocab_size
-    dataset = TextDataset(cfg.train.text, cfg.train.length, tokenizer, transforms)
+    dataset = TextDataset(cfg.train.text, cfg.train.length, tokenizer, transforms, tokenized_text_dir_path=cfg.tokenized_text_dir_path)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
     ckpt_path = cfg.train.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None

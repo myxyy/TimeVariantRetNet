@@ -4,6 +4,7 @@ __pycache__
 lightning_logs*
 *.pth
 *.ckpt
+*.npy
 log*
 outputs/
 poetry.lock
