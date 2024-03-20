@@ -14,7 +14,7 @@ def main(cfg):
     ckpt = torch.load(cfg.predict.weight)
     tokenizer = instantiate(cfg.tokenizer)
     model = instantiate(ckpt['model'])
-    vocab_size = tokenizer.num_tokens()
+    vocab_size = tokenizer.vocab_size
     model = model(devices=devices, vocab_size=vocab_size)
     model.load_state_dict(ckpt['state_dict'])
     model.eval()
