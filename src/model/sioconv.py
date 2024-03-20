@@ -226,9 +226,9 @@ class SioConvNet(nn.Module):
     def forward(self, x):
         x = self.token_in(x)
         for i, block in enumerate(self.block_list):
-            if i > 0 and self.device_index(i) != self.device_index(i-1):
-                x = x.to(self.devices[self.device_index(i)])
+            x = x.to(self.devices[self.device_index(i)])
             x = block(x)
+        x = x.to(self.devices[-1])
         x = self.layer_norm_last(x)
         x = self.token_out(x)
         return x 
