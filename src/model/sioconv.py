@@ -149,15 +149,17 @@ class CConv(nn.Module):
 
 
 class SioConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, dim_time, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
-        self.spiral_conv = SioConv(dim, dtype)
+        self.spiral_conv = SioConv(dim_time, dtype)
+        self.linear_time_in = nn.Linear(dim, dim_time)
+        self.linear_time_out = nn.Linear(dim_time, dim)
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.act = nn.SiLU()
-        self.fc = nn.Linear(dim, dim, dtype=dtype)
+        self.fc = nn.Linear(dim, dim_time, dtype=dtype)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -165,8 +167,9 @@ class SioConvNetBlock(nn.Module):
         x = self.layer_norm_sc_in(x)
         y = self.fc(x)
         y = self.act(y)
-        x = self.spiral_conv(x)
+        x = self.spiral_conv(self.linear_time_in(x))
         x = x * y
+        x = self.linear_time_out(x)
         x = self.dropout(x)
         x = x + x_
 
@@ -190,6 +193,7 @@ class SioConvNet(nn.Module):
         depth: int,
         dim: int,
         dim_ff_hidden: int,
+        dim_time: int,
         dropout: float,
         vocab_size: int,
         devices,
@@ -206,7 +210,7 @@ class SioConvNet(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, dim_time, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.token_in_out_parameter_corr = token_in_out_parameter_corr
