@@ -19,10 +19,11 @@ class FFN(nn.Module):
         return x
 
 class SioConv(nn.Module):
-    def __init__(self, dim: int, dtype):
+    def __init__(self, dim: int, dtype, num_head=8):
         super().__init__()
         self.dim = dim
-        self.linear_a = nn.Linear(dim, dim*2, bias=False)
+        self.num_head = num_head
+        self.linear_a = nn.Linear(dim, num_head*2, bias=False)
 
         self.last_hidden = None
         self.last_hidden_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
@@ -33,6 +34,7 @@ class SioConv(nn.Module):
         batch = x.shape[0]
         len = x.shape[1]
         dim = self.dim
+        num_head = self.num_head
         dtype = x.dtype
 
         if self.last_hidden is None:
@@ -40,30 +42,30 @@ class SioConv(nn.Module):
         else:
             self.last_hidden = self.last_hidden.detach()
 
-        a = torch.view_as_complex(self.linear_a(x).float().view(batch, len, dim, 2)) # (batch, len, dim)
+        a = torch.view_as_complex(self.linear_a(x).float().view(batch, len, num_head, 2)) # (batch, len, num_head)
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-a_sqr_mag)
-        x = x.cfloat()
+        x = x.cfloat().view(batch, len, num_head, dim//num_head)
 
         if len == 1:
-            h = a * self.last_hidden.unsqueeze(1) + x
+            h = (a.unsqueeze(3) * self.last_hidden.view(batch, num_head, dim//num_head).unsqueeze(1) + x).view(batch, len, dim)
             if self.is_refresh:
                 self.last_hidden = h[:,-1,:]
             return h.real.to(dtype)
 
         a_ln = torch.log(a)
-        a_ln_tri = a_ln.transpose(2,1).unsqueeze(2).expand(batch, dim, len, len).triu() # (batch, dim, len, len)
+        a_ln_tri = a_ln.transpose(2,1).unsqueeze(2).expand(batch, num_head, len, len).triu() # (batch, num_head, len, len)
         a_ln_tri_fft = torch.fft.fft(a_ln_tri, n=len*2, dim=3)
         ones_fft = torch.fft.fft(torch.ones(len, len, device=x.device), n=len*2, dim=1)
-        a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1)).narrow(3,0,len) # (batch, dim, len, len)
-        c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, dim, len, len)
+        a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1)).narrow(3,0,len) # (batch, num_head, len, len)
+        c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, len, len)
 
-        x = x.transpose(2,1) # (batch, dim, len)
-        x_mat = x.roll(1, dims=2).unsqueeze(2).repeat(1, 1, len, 1) # (batch, dim, len, len)
-        x_mat[:,:,:,0] = self.last_hidden.unsqueeze(2)
-        h = (x_mat * c.transpose(3,2)).sum(3) # (batch, dim, len)
-        h[:,:,-1] += x[:,:,-1]
-        h = h.transpose(2,1) # (batch, len, dim)
+        x = x.permute(0,2,3,1) # (batch, num_head, dim//num_head, len)
+        x_roll = x.roll(1, dims=3) # (batch, num_head, dim//num_head, len)
+        x_roll[:,:,:,0] = self.last_hidden.view(batch, num_head, dim//num_head)
+        h = torch.matmul(c.transpose(3,2), x_roll.transpose(3,2)).transpose(3,2)  # (batch, num_head, dim//num_head, len)
+        h[:,:,:,-1] += x[:,:,:,-1]
+        h = h.permute(0,3,1,2).reshape(batch, len, dim) # (batch, len, num_head, dim//num_head)
         if self.is_refresh:
             self.last_hidden = h[:,-1,:]
         return h.real.to(dtype)
@@ -157,16 +159,14 @@ class CConv(nn.Module):
 
 
 class SioConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dim_time, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
         self.act = nn.SiLU()
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.linear_time_in = nn.Linear(dim, dim_time)
-        self.fc = nn.Linear(dim, dim_time, dtype=dtype)
-        self.sioconv = SioConv(dim_time, dtype)
-        self.linear_time_out = nn.Linear(dim_time, dim)
+        self.fc = nn.Linear(dim, dim, dtype=dtype)
+        self.sioconv = SioConv(dim, dtype)
 
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
@@ -178,9 +178,8 @@ class SioConvNetBlock(nn.Module):
         x = self.layer_norm_sc_in(x)
         y = self.fc(x)
         y = self.act(y)
-        x = self.sioconv(self.linear_time_in(x))
+        x = self.sioconv(x)
         x = x * y
-        x = self.linear_time_out(x)
         x = self.dropout(x)
         x = x + x_
 
@@ -204,7 +203,6 @@ class SioConvNet(nn.Module):
         depth: int,
         dim: int,
         dim_ff_hidden: int,
-        dim_time: int,
         dropout: float,
         vocab_size: int,
         devices,
@@ -220,7 +218,7 @@ class SioConvNet(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, dim_time, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())
