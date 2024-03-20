@@ -46,13 +46,12 @@ class SioConv(nn.Module):
         a_ln = torch.log(a)
         a_ln_tri = a_ln.transpose(2,1).unsqueeze(2).expand(batch, dim, len, len).triu() # (batch, dim, len, len)
         a_ln_tri_fft = torch.fft.fft(a_ln_tri, n=len*2, dim=3)
-        ones_fft = torch.fft.fft(torch.ones(len, len), n=len*2, dim=1)
+        ones_fft = torch.fft.fft(torch.ones(len, len, device=x.device), n=len*2, dim=1)
         a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1)).narrow(3,0,len) # (batch, dim, len, len)
         c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, dim, len, len)
 
-        x = x.float().transpose(2,1) # (batch, dim, len)
+        x = x.cfloat().transpose(2,1) # (batch, dim, len)
         x_mat = x.roll(1, dims=2).unsqueeze(2).repeat(1, 1, len, 1)
-        print(f'shape {x_mat.shape}')
         x_mat[:,:,:,0] = self.last_hidden.unsqueeze(2)
         h = (x_mat * c).sum(3) # (batch, dim, len)
         h[:,:,-1] += x[:,:,-1]
