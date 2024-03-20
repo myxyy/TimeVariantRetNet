@@ -43,6 +43,14 @@ class SioConv(nn.Module):
         a = torch.view_as_complex(self.linear_a(x).float().view(batch, len, dim, 2)) # (batch, len, dim)
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-a_sqr_mag)
+        x = x.cfloat()
+
+        if len == 1:
+            h = a * self.last_hidden.unsqueeze(1) + x
+            if self.is_refresh:
+                self.last_hidden = h[:,-1,:]
+            return h.real.to(dtype)
+
         a_ln = torch.log(a)
         a_ln_tri = a_ln.transpose(2,1).unsqueeze(2).expand(batch, dim, len, len).triu() # (batch, dim, len, len)
         a_ln_tri_fft = torch.fft.fft(a_ln_tri, n=len*2, dim=3)
@@ -50,10 +58,10 @@ class SioConv(nn.Module):
         a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1)).narrow(3,0,len) # (batch, dim, len, len)
         c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, dim, len, len)
 
-        x = x.cfloat().transpose(2,1) # (batch, dim, len)
-        x_mat = x.roll(1, dims=2).unsqueeze(2).repeat(1, 1, len, 1)
+        x = x.transpose(2,1) # (batch, dim, len)
+        x_mat = x.roll(1, dims=2).unsqueeze(2).repeat(1, 1, len, 1) # (batch, dim, len, len)
         x_mat[:,:,:,0] = self.last_hidden.unsqueeze(2)
-        h = (x_mat * c).sum(3) # (batch, dim, len)
+        h = (x_mat * c.transpose(3,2)).sum(3) # (batch, dim, len)
         h[:,:,-1] += x[:,:,-1]
         h = h.transpose(2,1) # (batch, len, dim)
         if self.is_refresh:
