@@ -91,7 +91,7 @@ def main(cfg):
         for _ in range(cfg.train.max_epochs - epochs):
             pbar = tqdm(dataloader, initial=steps)
             for batch in pbar:
-                if steps % cfg.train.save_every_n_steps == 0:
+                if steps > 0 and steps % cfg.train.save_every_n_steps == 0:
                     save()
                 if steps % cfg.train.backup_every_n_steps == 0:
                     #print('backup...')
