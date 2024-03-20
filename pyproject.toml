@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "SConv"
+name = "SioConv"
 version = "0.1.0"
 description = ""
 authors = ["myxy"]
