@@ -160,14 +160,17 @@ class SioConvNetBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, dim_time, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
-        self.spiral_conv = SioConv(dim_time, dtype)
-        self.linear_time_in = nn.Linear(dim, dim_time)
-        self.linear_time_out = nn.Linear(dim_time, dim)
-        self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
-        self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.act = nn.SiLU()
+
+        self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.linear_time_in = nn.Linear(dim, dim_time)
         self.fc = nn.Linear(dim, dim_time, dtype=dtype)
+        self.sioconv = SioConv(dim_time, dtype)
+        self.linear_time_out = nn.Linear(dim_time, dim)
+
+        self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
+        self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -175,7 +178,7 @@ class SioConvNetBlock(nn.Module):
         x = self.layer_norm_sc_in(x)
         y = self.fc(x)
         y = self.act(y)
-        x = self.spiral_conv(self.linear_time_in(x))
+        x = self.sioconv(self.linear_time_in(x))
         x = x * y
         x = self.linear_time_out(x)
         x = self.dropout(x)
@@ -190,10 +193,10 @@ class SioConvNetBlock(nn.Module):
         return x
 
     def reset_hidden(self):
-        self.spiral_conv.reset_hidden()
+        self.sioconv.reset_hidden()
 
     def set_is_refresh(self, is_refresh):
-        self.spiral_conv.set_is_refresh(is_refresh)
+        self.sioconv.set_is_refresh(is_refresh)
 
 class SioConvNet(nn.Module):
     def __init__(
