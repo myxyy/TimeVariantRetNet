@@ -24,6 +24,7 @@ class SioConv(nn.Module):
         self.dim = dim
         self.num_head = num_head
         self.linear_a = nn.Linear(dim, num_head*2, bias=False)
+        self.linear_x = nn.Linear(dim, dim*2, bias=False)
 
         self.last_hidden = None
         self.last_hidden_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
@@ -42,10 +43,14 @@ class SioConv(nn.Module):
         else:
             self.last_hidden = self.last_hidden.detach()
 
-        a = torch.view_as_complex(self.linear_a(x).float().view(batch, len, num_head, 2)) # (batch, len, num_head)
+        a = torch.view_as_complex(torch.tanh(self.linear_a(x.float())).view(batch, len, num_head, 2)) # (batch, len, num_head)
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-a_sqr_mag)
-        x = x.cfloat().view(batch, len, num_head, dim//num_head)
+
+        x = torch.view_as_complex(torch.tanh(self.linear_x(x.float())).view(batch, len, dim, 2))
+        x_sqr_mag = x.real * x.real + x.imag * x.imag
+        x = x * torch.rsqrt(x_sqr_mag) * torch.exp(-x_sqr_mag)
+        x = x.view(batch, len, num_head, dim//num_head)
 
         if len == 1:
             h = (a.unsqueeze(3) * self.last_hidden.view(batch, num_head, dim//num_head).unsqueeze(1) + x).view(batch, len, dim)
