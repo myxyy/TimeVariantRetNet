@@ -19,7 +19,7 @@ class FFN(nn.Module):
         return x
 
 class SioConv(nn.Module):
-    def __init__(self, dim: int, dtype, num_head=8):
+    def __init__(self, dim: int, num_head: int, dtype):
         super().__init__()
         self.dim = dim
         self.num_head = num_head
@@ -159,14 +159,14 @@ class CConv(nn.Module):
 
 
 class SioConvNetBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, num_head: int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
         self.act = nn.SiLU()
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.fc = nn.Linear(dim, dim, dtype=dtype)
-        self.sioconv = SioConv(dim, dtype)
+        self.sioconv = SioConv(dim, num_head, dtype)
 
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
@@ -203,6 +203,7 @@ class SioConvNet(nn.Module):
         depth: int,
         dim: int,
         dim_ff_hidden: int,
+        num_head: int,
         dropout: float,
         vocab_size: int,
         devices,
@@ -218,7 +219,7 @@ class SioConvNet(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, num_head, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())
