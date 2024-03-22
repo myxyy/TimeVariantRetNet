@@ -25,6 +25,7 @@ class SioConv(nn.Module):
         self.num_head = num_head
         self.linear_a = nn.Linear(dim, num_head*2, bias=False)
         self.linear_x = nn.Linear(dim, dim*2, bias=False)
+        self.linear_out = nn.Linear(dim, dim, bias=False)
 
         self.last_hidden = None
         self.last_hidden_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
@@ -47,9 +48,9 @@ class SioConv(nn.Module):
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-a_sqr_mag)
 
-        x = torch.view_as_complex(torch.tanh(self.linear_x(x.float())).view(batch, len, dim, 2))
+        x = torch.view_as_complex(self.linear_x(x.float()).view(batch, len, dim, 2))
         x_sqr_mag = x.real * x.real + x.imag * x.imag
-        x = x * torch.rsqrt(x_sqr_mag) * torch.exp(-x_sqr_mag)
+        x = x * torch.rsqrt(x_sqr_mag) * x_sqr_mag
         x = x.view(batch, len, num_head, dim//num_head)
 
         if len == 1:
@@ -73,7 +74,7 @@ class SioConv(nn.Module):
         h = h.permute(0,3,1,2).reshape(batch, len, dim) # (batch, len, num_head, dim//num_head)
         if self.is_refresh:
             self.last_hidden = h[:,-1,:]
-        return h.real.to(dtype)
+        return self.linear_out(h.real).to(dtype)
 
     def reset_hidden(self):
         self.last_hidden = None
@@ -167,24 +168,19 @@ class SioConvNetBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, num_head: int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
-        self.act = nn.SiLU()
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.fc = nn.Linear(dim, dim, dtype=dtype)
         self.sioconv = SioConv(dim, num_head, dtype)
 
-        self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
+        self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
 
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         x_ = x
         x = self.layer_norm_sc_in(x)
-        y = self.fc(x)
-        y = self.act(y)
         x = self.sioconv(x)
-        x = x * y
         x = self.dropout(x)
         x = x + x_
 
