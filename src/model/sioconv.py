@@ -44,9 +44,9 @@ class SioConv(nn.Module):
         else:
             self.last_hidden = self.last_hidden.detach()
 
-        a = torch.view_as_complex(torch.tanh(self.linear_a(x.float())).view(batch, len, num_head, 2)) # (batch, len, num_head)
+        a = torch.view_as_complex(self.linear_a(x.float()).view(batch, len, num_head, 2)) # (batch, len, num_head)
         a_sqr_mag = a.real * a.real + a.imag * a.imag
-        a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-a_sqr_mag)
+        a = a * torch.rsqrt(a_sqr_mag) * torch.exp(-torch.tanh(a_sqr_mag))
 
         x = torch.view_as_complex(self.linear_x(x.float()).view(batch, len, dim, 2))
         x_sqr_mag = x.real * x.real + x.imag * x.imag
