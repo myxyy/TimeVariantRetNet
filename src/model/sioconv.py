@@ -57,7 +57,7 @@ class SioConv(nn.Module):
             h = (a.unsqueeze(3) * self.last_hidden.view(batch, num_head, dim//num_head).unsqueeze(1) + x).view(batch, len, dim)
             if self.is_refresh:
                 self.last_hidden = h[:,-1,:]
-            return h.real.to(dtype)
+            return self.linear_out(h.real).to(dtype)
 
         a_ln = torch.log(a)
         a_ln_tri = a_ln.transpose(2,1).unsqueeze(2).expand(batch, num_head, len, len).triu() # (batch, num_head, len, len)
