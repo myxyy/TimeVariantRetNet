@@ -9,7 +9,6 @@ import hydra
 from hydra.utils import instantiate
 from tqdm import tqdm
 from torch.distributed.pipeline.sync import Pipe
-from model.sconv import SConvNet
 import copy
 
 @hydra.main(version_base=None, config_path="../configs/", config_name="config")
@@ -32,7 +31,7 @@ def main(cfg):
     if ckpt_path is not None:
         ckpt = torch.load(ckpt_path)
         model = instantiate(ckpt['model'])
-        model: SConvNet = model(devices=devices, vocab_size=vocab_size)
+        model = model(devices=devices, vocab_size=vocab_size)
         model.load_state_dict(ckpt['state_dict'])
         epochs = ckpt['epochs']
         steps = ckpt['steps']
@@ -41,7 +40,7 @@ def main(cfg):
         del ckpt
     else:
         model = instantiate(cfg.model)
-        model: SConvNet = model(devices=devices, vocab_size=vocab_size)
+        model = model(devices=devices, vocab_size=vocab_size)
         epochs = 0
         steps = 0
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.lr)

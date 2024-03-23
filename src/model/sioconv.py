@@ -18,7 +18,7 @@ class FFN(nn.Module):
         x = self.linear_2(x)
         return x
 
-class SioConv(nn.Module):
+class SioConvLayer(nn.Module):
     def __init__(self, dim: int, num_head: int, dtype):
         super().__init__()
         self.dim = dim
@@ -82,95 +82,13 @@ class SioConv(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
-
-
-
-class SConv(nn.Module):
-    def __init__(self, dim: int, dtype):
-        super().__init__()
-        self.dim = dim
-        self.phazor_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
-        self.phazor = nn.Parameter(torch.exp(2.0j * np.pi * torch.arange(dim) / dim) * torch.abs(torch.randn(dim)))
-        self.last_conv = None # (batch, dim)
-        self.last_conv_init = nn.Parameter(torch.randn(dim, dtype=torch.cfloat))
-        self.is_refresh = True
-
-    # (batch, len, dim) -> (batch, len, dim)
-    def forward(self, x):
-        batch = x.shape[0]
-        len = x.shape[1]
-        dtype = x.dtype
-
-        x = x.to(torch.cfloat)
-        if self.last_conv is None:
-            self.last_conv = self.last_conv_init.unsqueeze(0).expand(batch, self.dim)
-        else:
-            self.last_conv = self.last_conv.detach()
-        phazor = self.phazor
-        phazor = torch.exp(-phazor.real*phazor.real-phazor.imag*phazor.imag) * torch.exp(1.0j * phazor.angle())
-        phazor_progression = torch.pow(phazor.unsqueeze(0), torch.arange(len, device=x.device).unsqueeze(1)) # (len, dim)
-        filter = phazor_progression * self.phazor_init.unsqueeze(0)
-        filter_fft = torch.fft.fft(filter, n=len*2, dim=0) # (len*2, dim)
-        x_fft = torch.fft.fft(x, n=len*2, dim=1) # (batch, len*2, dim)
-        conv_filter_x = torch.fft.ifft(filter_fft.unsqueeze(0) * x_fft, dim=1).narrow(1,0,len) # (batch, len, dim)
-        conv_with_past = conv_filter_x + self.last_conv.unsqueeze(1)*phazor_progression.unsqueeze(0)*phazor.unsqueeze(0).unsqueeze(0)
-        if self.is_refresh:
-            self.last_conv = conv_with_past[:,-1,:]
-
-        y = conv_with_past
-        y = y.real.to(dtype)
-        return y
-
-    def reset_hidden(self):
-        self.last_conv = None
-
-    def set_is_refresh(self, is_refresh):
-        self.is_refresh = is_refresh
-
-class CConv(nn.Module):
-    def __init__(self, dim: int, clen: int, dtype):
-        super().__init__()
-        self.dim = dim
-        self.clen = clen
-        self.last_input_init = nn.Parameter(torch.randn((clen, dim), dtype=torch.float))
-        self.filter= nn.Parameter(torch.randn((clen, dim), dtype=torch.float) / dim)
-        self.last_input = None
-        self.is_refresh = True
-
-    def forward(self, x):
-        batch = x.shape[0]
-        len = x.shape[1]
-        dtype = x.dtype
-
-        x = x.to(torch.float)
-
-        if self.last_input is None:
-            self.last_input = self.last_input_init.unsqueeze(0).expand(batch, self.clen, self.dim)
-        else:
-            self.last_input = self.last_input.detach()
-        
-        x_with_last = torch.cat((self.last_input, x), dim=1)
-        fft_x_with_last = torch.fft.rfft(x_with_last, n=(self.clen+len)*2, dim=1)
-        fft_filter = torch.fft.rfft(self.filter, n=(self.clen+len)*2, dim=0)
-        conv_x_with_last_filter = torch.fft.irfft(fft_x_with_last * fft_filter.unsqueeze(0), dim=1).narrow(1,self.clen,len)
-        if self.is_refresh:
-            self.last_input = x_with_last.narrow(1,len,self.clen)
-        return conv_x_with_last_filter.to(dtype)
-
-    def reset_hidden(self):
-        self.last_input = None
-
-    def set_is_refresh(self, is_refresh):
-        self.is_refresh = is_refresh
-
-
-class SioConvNetBlock(nn.Module):
+class SioConvBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, num_head: int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.sioconv = SioConv(dim, num_head, dtype)
+        self.sioconv = SioConvLayer(dim, num_head, dtype)
 
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
@@ -198,7 +116,7 @@ class SioConvNetBlock(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.sioconv.set_is_refresh(is_refresh)
 
-class SioConvNet(nn.Module):
+class SioConv(nn.Module):
     def __init__(
         self,
         depth: int,
@@ -220,7 +138,7 @@ class SioConvNet(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvNetBlock(dim, dim_ff_hidden, num_head, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SioConvBlock(dim, dim_ff_hidden, num_head, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())
