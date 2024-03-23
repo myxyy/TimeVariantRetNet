@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - model: default.yaml
+  - model: sioconv.yaml
   - train: default.yaml
   - predict: default.yaml
   - tokenizer: elyza.yaml
