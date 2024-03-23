@@ -20,7 +20,6 @@ def main(cfg):
     tokenizer = instantiate(cfg.tokenizer)
     vocab_size = tokenizer.vocab_size
     dataset = TextDataset(cfg.train.text, cfg.train.length, tokenizer, transforms, tokenized_text_dir_path=cfg.tokenized_text_dir_path)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.train.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
     ckpt_path = cfg.train.weight
     ckpt_path = ckpt_path if os.path.isfile(ckpt_path) else None
     #trainer = pl.Trainer(devices=1, accelerator='gpu', max_epochs=cfg.train.max_epochs, log_every_n_steps=cfg.train.log_every_n_steps, logger=[TensorBoardLogger('./')])
@@ -45,6 +44,9 @@ def main(cfg):
         steps = 0
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.train.lr)
 
+    total_steps = len(dataset) // cfg.train.batch_size
+    print(f'loaded. steps:{steps}/{total_steps} epochs:{epochs}/{cfg.train.max_epochs}')
+
     dtype = model.dtype
 
     torch.cuda.empty_cache()
@@ -65,7 +67,7 @@ def main(cfg):
     backup_optimizer_state_dict = copy.deepcopy(find_tensor_and_transfer(optimizer.state_dict()))
 
     def save():
-        print(f'saving... steps:{steps}/{len(dataloader)} epochs:{epochs}/{cfg.train.max_epochs}')
+        print(f'saving... steps:{steps}/{total_steps} epochs:{epochs}/{cfg.train.max_epochs}')
         torch.save({
             'state_dict': model.state_dict(),
             'steps': steps,
@@ -75,7 +77,7 @@ def main(cfg):
         }, cfg.train.weight)
 
     def save_backup():
-        print(f'saving... steps:{backup_steps}/{len(dataloader)} epochs:{backup_epochs}/{cfg.train.max_epochs}')
+        print(f'saving... steps:{backup_steps}/{total_steps} epochs:{backup_epochs}/{cfg.train.max_epochs}')
         torch.save({
             'state_dict': backup_model_state_dict,
             'steps': backup_steps,
@@ -88,7 +90,10 @@ def main(cfg):
 
     try:
         for _ in range(cfg.train.max_epochs - epochs):
-            pbar = tqdm(dataloader, initial=steps)
+
+            dataloader = torch.utils.data.DataLoader([dataset[i] for i in range(cfg.train.batch_size * steps, len(dataset))], batch_size=cfg.train.batch_size, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True)
+
+            pbar = tqdm(dataloader, initial=steps, total=total_steps)
             for batch in pbar:
                 if steps > 0 and steps % cfg.train.save_every_n_steps == 0:
                     save()
