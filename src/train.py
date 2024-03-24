@@ -86,7 +86,7 @@ def main(cfg):
             'model': cfg.model,
         }, cfg.train.weight)
 
-    model.set_is_refresh(False)
+    model.set_is_refresh(True)
 
     try:
         for _ in range(cfg.train.max_epochs - epochs):
@@ -104,6 +104,7 @@ def main(cfg):
                     backup_epochs = epochs
                     backup_optimizer_state_dict = copy.deepcopy(find_tensor_and_transfer(optimizer.state_dict()))
 
+                model.reset_hidden()
                 optimizer.zero_grad()
 
                 text, text_next = batch
