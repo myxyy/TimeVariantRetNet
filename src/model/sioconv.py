@@ -69,18 +69,19 @@ class SioConvLayer(nn.Module):
         ones_fft = torch.fft.fft(torch.ones(len, len, device=x.device), n=len*2, dim=1)
         a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1).unsqueeze(2)).narrow(4,0,len) # (batch, num_head, inner_dim, len, len)
         c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, inner_dim, len, len)
-        mat_v_unsqueeze = self.mat_v.unsqueeze(0).unsqueeze(2).unsqueeze(3)
-        c = torch.matmul(mat_v_unsqueeze * c.permute(0,1,3,4,2).unsqueeze(4), torch.inverse(mat_v_unsqueeze)) # (batch, num_head, len, len, inner_dim, inner_dim)
 
         x = x.permute(0,2,3,1) # (batch, num_head, inner_dim, len)
         x_roll = x.roll(1, dims=3) # (batch, num_head, inner_dim, len)
         x_roll[:,:,:,0] = self.last_hidden
-        h = torch.einsum("bhlmno,bhol->bhmn", c, x_roll).transpose(3,2) # (batch, num_head, inner_dim, len)
+
+        h = torch.einsum("hno,bhol->bhnl", torch.inverse(self.mat_v), x_roll) # (batch, num_head, inner_dim, len)
+        h = torch.einsum("bholm,bhol->bhom", c, h) # (batch, num_head, inner_dim, len)
+        h = torch.einsum("hno,bhol->bhnl", self.mat_v, h) # (batch, num_head, inner_dim, len)
+
         h[:,:,:,-1] += x[:,:,:,-1]
-        h = h.permute(0,3,1,2) # (batch, len, num_head, inner_dim)
         if self.is_refresh:
-            self.last_hidden = h[:,-1,:, :]
-        h = h.reshape(batch, len, num_head * inner_dim)
+            self.last_hidden = h[:,:,:,-1]
+        h = h.permute(0,3,1,2).reshape(batch, len, num_head * inner_dim)
         return self.linear_out(h.real).to(dtype)
 
     def reset_hidden(self):
