@@ -52,8 +52,8 @@ class SioConvLayer(nn.Module):
         a = a * torch.rsqrt(a_sqr_mag) * torch.sigmoid(torch.log(a_sqr_mag))
 
         x = torch.view_as_complex(self.linear_x(x.float()).view(batch, len, num_head, inner_dim, 2)) # (batch, len, num_head, inner_dim)
-        x_sqr_mag = x.real * x.real + x.imag * x.imag
-        x = x * torch.rsqrt(x_sqr_mag) * x_sqr_mag
+        # x_sqr_mag = x.real * x.real + x.imag * x.imag
+        # x = x * torch.rsqrt(x_sqr_mag) * x_sqr_mag
 
         if len == 1:
             vav_inv = torch.matmul(self.mat_v.unsqueeze(0).unsqueeze(1) * a.unsqueeze(3), torch.inverse(self.mat_v)) # (batch, len, num_head, inner_dim, inner_dim)
@@ -70,19 +70,17 @@ class SioConvLayer(nn.Module):
         a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1).unsqueeze(2)).narrow(4,0,len) # (batch, num_head, inner_dim, len, len)
         c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, inner_dim, len, len)
 
-        x = x.permute(0,2,3,1) # (batch, num_head, inner_dim, len)
-        x_roll = x.roll(1, dims=3) # (batch, num_head, inner_dim, len)
-        x_roll[:,:,:,0] = self.last_hidden
+        x_roll = x.roll(1, dims=1) # (batch, len, num_head, inner_dim)
+        x_roll[:,0,:,:] = self.last_hidden
 
-        h = torch.einsum("hno,bhol->bhnl", torch.inverse(self.mat_v), x_roll) # (batch, num_head, inner_dim, len)
-        h = torch.einsum("bholm,bhol->bhom", c, h) # (batch, num_head, inner_dim, len)
-        h = torch.einsum("hno,bhol->bhnl", self.mat_v, h) # (batch, num_head, inner_dim, len)
+        h = torch.einsum("hno,blho->blhn", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
+        h = torch.einsum("bholm,blho->bmho", c, h) # (batch, len, num_head, inner_dim)
+        h = torch.einsum("hno,blho->blhn", self.mat_v, h) # (batch, len, num_head, inner_dim)
 
-        h[:,:,:,-1] += x[:,:,:,-1]
+        h[:,-1,:,:] += x[:,-1,:,:]
         if self.is_refresh:
-            self.last_hidden = h[:,:,:,-1]
-        h = h.permute(0,3,1,2).reshape(batch, len, num_head * inner_dim)
-        return self.linear_out(h.real).to(dtype)
+            self.last_hidden = h[:,-1,:,:]
+        return self.linear_out(h.view(batch, len, num_head * inner_dim).real).to(dtype)
 
     def reset_hidden(self):
         self.last_hidden = None
