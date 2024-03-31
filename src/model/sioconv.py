@@ -24,11 +24,12 @@ class SioConvLayer(nn.Module):
         self.dim = dim
         self.inner_dim = inner_dim 
         self.num_head = num_head
-        self.linear_a = nn.Linear(dim, num_head * inner_dim*2, bias=False)
-        self.linear_x = nn.Linear(dim, num_head * inner_dim*2, bias=False)
+        self.fc_in_1 = nn.Linear(dim, dim)
+        self.fc_in_2 = nn.Linear(dim, num_head * inner_dim * 4)
+        self.fc_out_1 = nn.Linear(num_head * inner_dim * 2, dim)
+        self.fc_out_2 = nn.Linear(dim, dim)
+        self.act = nn.SiLU()
         self.mat_v = nn.Parameter(torch.randn(num_head, inner_dim, inner_dim, dtype=torch.cfloat))
-        self.linear_out = nn.Linear(num_head * inner_dim, dim, bias=False)
-
         self.last_hidden = None
         self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, dtype=torch.cfloat))
         self.is_refresh = True
@@ -46,12 +47,16 @@ class SioConvLayer(nn.Module):
             self.last_hidden = self.last_hidden_init.unsqueeze(0).expand(batch, num_head, inner_dim)
         else:
             self.last_hidden = self.last_hidden.detach()
+        
+        x = x.float()
+        x = self.fc_in_1(x)
+        x = self.act(x)
+        x = self.fc_in_2(x) # (batch, len, num_head * inner_dim * 4)
+        x = torch.view_as_complex(x.view(batch, len, num_head, inner_dim, 2, 2))  # (batch, len, num_head, inner_dim, 2)
+        x, a = x[:,:,:,:,0], x[:,:,:,:,1] # (batch, len, num_head, inner_dim)
 
-        a = torch.view_as_complex(self.linear_a(x.float()).view(batch, len, num_head, inner_dim, 2)) # (batch, len, num_head, inner_dim)
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.sigmoid(torch.log(a_sqr_mag))
-
-        x = torch.view_as_complex(self.linear_x(x.float()).view(batch, len, num_head, inner_dim, 2)) # (batch, len, num_head, inner_dim)
 
         if len == 1:
             h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), self.last_hidden)
@@ -78,7 +83,10 @@ class SioConvLayer(nn.Module):
         if self.is_refresh:
             self.last_hidden = h[:,-1,:,:]
         h = h.view(batch, len, num_head*inner_dim)
-        return self.linear_out(h.real).to(dtype)
+        y = self.fc_out_1(torch.view_as_real(h).reshape(batch, len, num_head*inner_dim*2))
+        y = self.act(y)
+        y = self.fc_out_2(y)
+        return y.to(dtype)
 
     def reset_hidden(self):
         self.last_hidden = None
