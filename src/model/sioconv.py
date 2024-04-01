@@ -51,10 +51,12 @@ class SioConvLayer(nn.Module):
         a = a * torch.rsqrt(a_sqr_mag) * torch.sigmoid(torch.log(a_sqr_mag))
 
         if len == 1:
-            h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), hidden)
-            h = torch.einsum("bhd,bhd->bhd", a.squeeze(1), h)
+            #h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), hidden)
+            h = torch.einsum("bhd,bhd->bhd", a.squeeze(1), hidden)
+            h += torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), x.squeeze(1))
+            hidden_next = h
             h = torch.einsum("hed,bhd->bhe", self.mat_v, h)
-            h = h.unsqueeze(1) + x
+            h = h.unsqueeze(1)
         else:
             a_ln = torch.log(a)
             a_ln_tri = a_ln.permute(0,2,3,1).unsqueeze(3).expand(batch, num_head, inner_dim, len, len).triu() # (batch, num_head, inner_dim, len, len)
@@ -63,15 +65,16 @@ class SioConvLayer(nn.Module):
             a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1).unsqueeze(2)).narrow(4,0,len) # (batch, num_head, inner_dim, len, len)
             c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, inner_dim, len, len)
 
-            x_roll = x.roll(1, dims=1) # (batch, len, num_head, inner_dim)
-            x_roll[:,0,:,:] = hidden
+            vx = torch.einsum("hed,blhd->blhe", torch.inverse(self.mat_v), x)
+            vx_roll = vx.roll(1, dims=1) # (batch, len, num_head, inner_dim)
+            vx_roll[:,0,:,:] = hidden
 
-            h = torch.einsum("hno,blho->blhn", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
-            h = torch.einsum("bholm,blho->bmho", c, h) # (batch, len, num_head, inner_dim)
-            h[:,-1,:,:] += torch.einsum("hno,bho->bhn", torch.inverse(self.mat_v), x[:,-1,:,:])
+            #h = torch.einsum("hed,blhd->blhe", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
+            h = torch.einsum("bholm,blho->bmho", c, vx_roll) # (batch, len, num_head, inner_dim)
+            h[:,-1,:,:] += vx[:,-1,:,:]
+            hidden_next = h[:,-1,:,:]
             h = torch.einsum("hno,blho->blhn", self.mat_v, h) # (batch, len, num_head, inner_dim)
 
-        hidden_next = h[:,-1,:,:]
         h = h.view(batch, len, num_head*inner_dim)
         y = self.fc_out_1(torch.view_as_real(h).reshape(batch, len, num_head*inner_dim*2))
         y = self.act(y)
