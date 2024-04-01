@@ -30,12 +30,9 @@ class SioConvLayer(nn.Module):
         self.fc_out_2 = nn.Linear(dim, dim)
         self.act = nn.SiLU()
         self.mat_v = nn.Parameter(torch.randn(num_head, inner_dim, inner_dim, dtype=torch.cfloat))
-        self.last_hidden = None
-        self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, dtype=torch.cfloat))
-        self.is_refresh = True
 
     #(batch, len, dim) -> (batch, len, dim)
-    def forward(self, x):
+    def forward(self, x, hidden):
         batch = x.shape[0]
         len = x.shape[1]
         dim = self.dim
@@ -43,11 +40,6 @@ class SioConvLayer(nn.Module):
         num_head = self.num_head
         dtype = x.dtype
 
-        if self.last_hidden is None:
-            self.last_hidden = self.last_hidden_init.unsqueeze(0).expand(batch, num_head, inner_dim)
-        else:
-            self.last_hidden = self.last_hidden.detach()
-        
         x = x.float()
         x = self.fc_in_1(x)
         x = self.act(x)
@@ -59,7 +51,7 @@ class SioConvLayer(nn.Module):
         a = a * torch.rsqrt(a_sqr_mag) * torch.sigmoid(torch.log(a_sqr_mag))
 
         if len == 1:
-            h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), self.last_hidden)
+            h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), hidden)
             h = torch.einsum("bhd,bhd->bhd", a.squeeze(1), h)
             h = torch.einsum("hed,bhd->bhe", self.mat_v, h)
             h = h.unsqueeze(1) + x
@@ -72,7 +64,7 @@ class SioConvLayer(nn.Module):
             c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, inner_dim, len, len)
 
             x_roll = x.roll(1, dims=1) # (batch, len, num_head, inner_dim)
-            x_roll[:,0,:,:] = self.last_hidden
+            x_roll[:,0,:,:] = hidden
 
             h = torch.einsum("hno,blho->blhn", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
             h = torch.einsum("bholm,blho->bmho", c, h) # (batch, len, num_head, inner_dim)
@@ -80,13 +72,12 @@ class SioConvLayer(nn.Module):
 
             h[:,-1,:,:] += x[:,-1,:,:]
 
-        if self.is_refresh:
-            self.last_hidden = h[:,-1,:,:]
+        hidden_next = h[:,-1,:,:]
         h = h.view(batch, len, num_head*inner_dim)
         y = self.fc_out_1(torch.view_as_real(h).reshape(batch, len, num_head*inner_dim*2))
         y = self.act(y)
         y = self.fc_out_2(y)
-        return y.to(dtype)
+        return y.to(dtype), hidden_next
 
     def reset_hidden(self):
         self.last_hidden = None
@@ -94,13 +85,51 @@ class SioConvLayer(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
+class ChunkWiseSioConvLayer(nn.Module):
+    def __init__(self, dim: int, inner_dim: int, num_head: int, chunk_size: int, dtype):
+        super().__init__()
+        self.sioconv = SioConvLayer(dim, inner_dim, num_head, dtype)
+        self.last_hidden = None
+        self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, dtype=torch.cfloat))
+        self.is_refresh = True
+        self.inner_dim = inner_dim 
+        self.num_head = num_head
+        self.chunk_size = chunk_size
+
+    def forward(self, x):
+        batch = x.shape[0]
+        inner_dim = self.inner_dim
+        num_head = self.num_head
+
+        if self.last_hidden is None:
+            hidden = self.last_hidden_init.unsqueeze(0).expand(batch, num_head, inner_dim)
+        else:
+            hidden = self.last_hidden.detach()
+
+        input_chunks = x.split(self.chunk_size, dim=1)
+        output_chunks = []
+        for input_chunk in input_chunks:
+            output_chunk, hidden = self.sioconv(input_chunk, hidden)
+            output_chunks.append(output_chunk)
+
+        if self.is_refresh:
+            self.last_hidden = hidden
+
+        return torch.cat(output_chunks, dim=1)
+ 
+    def reset_hidden(self):
+        self.last_hidden = None
+
+    def set_is_refresh(self, is_refresh):
+        self.is_refresh = is_refresh
+
 class SioConvBlock(nn.Module):
-    def __init__(self, dim: int, dim_ff_hidden: int, inner_dim: int, num_head: int, dropout: float, dtype):
+    def __init__(self, dim: int, dim_ff_hidden: int, inner_dim: int, num_head: int, chunk_size:int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.sioconv = SioConvLayer(dim, inner_dim, num_head, dtype)
+        self.sioconv = ChunkWiseSioConvLayer(dim, inner_dim, num_head, chunk_size, dtype)
 
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
@@ -136,6 +165,7 @@ class SioConv(nn.Module):
         dim_ff_hidden: int,
         inner_dim: int,
         num_head: int,
+        chunk_size: int,
         dropout: float,
         vocab_size: int,
         devices,
@@ -151,7 +181,7 @@ class SioConv(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvBlock(dim, dim_ff_hidden, inner_dim, num_head, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([SioConvBlock(dim, dim_ff_hidden, inner_dim, num_head, chunk_size, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())
