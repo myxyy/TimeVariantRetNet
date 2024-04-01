@@ -68,9 +68,8 @@ class SioConvLayer(nn.Module):
 
             h = torch.einsum("hno,blho->blhn", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
             h = torch.einsum("bholm,blho->bmho", c, h) # (batch, len, num_head, inner_dim)
+            h[:,-1,:,:] += torch.einsum("hno,bho->bhn", torch.inverse(self.mat_v), x[:,-1,:,:])
             h = torch.einsum("hno,blho->blhn", self.mat_v, h) # (batch, len, num_head, inner_dim)
-
-            h[:,-1,:,:] += x[:,-1,:,:]
 
         hidden_next = h[:,-1,:,:]
         h = h.view(batch, len, num_head*inner_dim)
