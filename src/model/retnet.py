@@ -24,6 +24,8 @@ class TimeVariantRetentionLayer(nn.Module):
         self.dim = dim
         self.inner_dim = inner_dim 
         self.num_head = num_head
+        self.linear_qkva = nn.Linear(dim, num_head * inner_dim * 4 * 2, bias=False)
+        self.linear_out = nn.Linear(num_head * inner_dim * 2, dim, bias=False)
         self.fc_in_1 = nn.Linear(dim, dim)
         self.fc_in_2 = nn.Linear(dim, num_head * inner_dim * 4)
         self.fc_out_1 = nn.Linear(num_head * inner_dim * 2, dim)
@@ -31,7 +33,7 @@ class TimeVariantRetentionLayer(nn.Module):
         self.act = nn.SiLU()
         self.mat_v = nn.Parameter(torch.randn(num_head, inner_dim, inner_dim, dtype=torch.cfloat))
 
-    #(batch, len, dim) -> (batch, len, dim)
+    #(batch, len, dim), (batch, num_head, inner_dim, inner_dim) -> (batch, len, dim), (batch, num_head, inner_dim, inner_dim)
     def forward(self, x, hidden):
         batch = x.shape[0]
         len = x.shape[1]
@@ -41,21 +43,20 @@ class TimeVariantRetentionLayer(nn.Module):
         dtype = x.dtype
 
         x = x.float()
-        x = self.fc_in_1(x)
-        x = self.act(x)
-        x = self.fc_in_2(x) # (batch, len, num_head * inner_dim * 4)
-        x = torch.view_as_complex(x.view(batch, len, num_head, inner_dim, 2, 2))  # (batch, len, num_head, inner_dim, 2)
-        x, a = x[:,:,:,:,0], x[:,:,:,:,1] # (batch, len, num_head, inner_dim)
+        x = self.linear_qkva(x)
+        x = torch.view_as_complex(x.view(batch, len, num_head, inner_dim, 4, 2))  # (batch, len, num_head, inner_dim, 4)
+        q, k, v, a = x[:,:,:,:,0], x[:,:,:,:,1], x[:,:,:,:,2], x[:,:,:,:,3] # (batch, len, num_head, inner_dim)
 
         a_sqr_mag = a.real * a.real + a.imag * a.imag
         a = a * torch.rsqrt(a_sqr_mag) * torch.sigmoid(torch.log(a_sqr_mag))
 
+        kv = torch.einsum("blhd,blhe->blhde", k, v) # (batch, len, num_head, inner_dim, inner_dim)
+
         if len == 1:
-            #h = torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), hidden)
-            h = torch.einsum("bhd,bhd->bhd", a.squeeze(1), hidden)
-            h += torch.einsum("hed,bhd->bhe", torch.inverse(self.mat_v), x.squeeze(1))
+            h = torch.einsum("bhd,bhde->bhde", a.squeeze(1), hidden) # (batch, num_head, inner_dim, inner_dim)
+            h += kv.squeeze(1)
             hidden_next = h
-            h = torch.einsum("hed,bhd->bhe", self.mat_v, h)
+            h = torch.einsum("bhd,bhde->bhe", q.squeeze(1), h)
             h = h.unsqueeze(1)
         else:
             a_ln = torch.log(a)
@@ -65,20 +66,15 @@ class TimeVariantRetentionLayer(nn.Module):
             a_ln_tri_conv = torch.fft.ifft(a_ln_tri_fft * ones_fft.unsqueeze(0).unsqueeze(1).unsqueeze(2)).narrow(4,0,len) # (batch, num_head, inner_dim, len, len)
             c = torch.exp(a_ln_tri_conv).triu(diagonal=-1) # (batch, num_head, inner_dim, len, len)
 
-            vx = torch.einsum("hed,blhd->blhe", torch.inverse(self.mat_v), x)
-            vx_roll = vx.roll(1, dims=1) # (batch, len, num_head, inner_dim)
-            vx_roll[:,0,:,:] = hidden
-
-            #h = torch.einsum("hed,blhd->blhe", torch.inverse(self.mat_v), x_roll) # (batch, len, num_head, inner_dim)
-            h = torch.einsum("bholm,blho->bmho", c, vx_roll) # (batch, len, num_head, inner_dim)
-            h[:,-1,:,:] += vx[:,-1,:,:]
-            hidden_next = h[:,-1,:,:]
-            h = torch.einsum("hno,blho->blhn", self.mat_v, h) # (batch, len, num_head, inner_dim)
+            kv_roll = kv.roll(1, dims=1) # (batch, len, num_head, inner_dim, inner_dim)
+            kv_roll[:,0,:,:,:] = hidden
+            h = torch.einsum("bholm,blhop->bmhop", c, kv_roll) # (batch, len, num_head, inner_dim, inner_dim)
+            h[:,-1,:,:,:] += kv[:,-1,:,:,:]
+            hidden_next = h[:,-1,:,:,:]
+            h = torch.einsum("blho,blhop->blhp", q, h) # (batch, len, num_head, inner_dim)
 
         h = h.view(batch, len, num_head*inner_dim)
-        y = self.fc_out_1(torch.view_as_real(h).reshape(batch, len, num_head*inner_dim*2))
-        y = self.act(y)
-        y = self.fc_out_2(y)
+        y = self.linear_out(torch.view_as_real(h).reshape(batch, len, num_head*inner_dim*2))
         return y.to(dtype), hidden_next
 
     def reset_hidden(self):
@@ -92,7 +88,7 @@ class ChunkWiseRetentionLayer(nn.Module):
         super().__init__()
         self.retention = TimeVariantRetentionLayer(dim, inner_dim, num_head, dtype)
         self.last_hidden = None
-        self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, dtype=torch.cfloat))
+        self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, inner_dim, dtype=torch.cfloat))
         self.is_refresh = True
         self.inner_dim = inner_dim 
         self.num_head = num_head
@@ -104,7 +100,7 @@ class ChunkWiseRetentionLayer(nn.Module):
         num_head = self.num_head
 
         if self.last_hidden is None:
-            hidden = self.last_hidden_init.unsqueeze(0).expand(batch, num_head, inner_dim)
+            hidden = self.last_hidden_init.unsqueeze(0).expand(batch, num_head, inner_dim, inner_dim)
         else:
             hidden = self.last_hidden.detach()
 
