@@ -128,6 +128,8 @@ class RetNetBlock(nn.Module):
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.retention = ChunkWiseRetentionLayer(dim, inner_dim, num_head, chunk_size, dtype)
+        self.fc_gate = nn.Linear(dim,dim)
+        self.act = nn.SiLU()
 
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
@@ -137,7 +139,10 @@ class RetNetBlock(nn.Module):
     def forward(self, x):
         x_ = x
         x = self.layer_norm_sc_in(x)
+        y = self.fc_gate(x)
+        y = self.act(y)
         x = self.retention(x)
+        x = x * y
         x = self.dropout(x)
         x = x + x_
 
