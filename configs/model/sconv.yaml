@@ -1,9 +1,0 @@
-_target_: src.model.sconv.SConv
-_partial_: True
-dim: 4096
-depth: 24
-dim_ff_hidden: 8192 
-dropout: 0.1
-dtype:
-  _target_: hydra.utils.get_object
-  path: torch.float

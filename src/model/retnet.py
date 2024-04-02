@@ -18,7 +18,7 @@ class FFN(nn.Module):
         x = self.linear_2(x)
         return x
 
-class SioConvLayer(nn.Module):
+class TimeVariantRetentionLayer(nn.Module):
     def __init__(self, dim: int, inner_dim: int, num_head: int, dtype):
         super().__init__()
         self.dim = dim
@@ -87,10 +87,10 @@ class SioConvLayer(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
-class ChunkWiseSioConvLayer(nn.Module):
+class ChunkWiseRetentionLayer(nn.Module):
     def __init__(self, dim: int, inner_dim: int, num_head: int, chunk_size: int, dtype):
         super().__init__()
-        self.sioconv = SioConvLayer(dim, inner_dim, num_head, dtype)
+        self.retention = TimeVariantRetentionLayer(dim, inner_dim, num_head, dtype)
         self.last_hidden = None
         self.last_hidden_init = nn.Parameter(torch.randn(num_head, inner_dim, dtype=torch.cfloat))
         self.is_refresh = True
@@ -111,7 +111,7 @@ class ChunkWiseSioConvLayer(nn.Module):
         input_chunks = x.split(self.chunk_size, dim=1)
         output_chunks = []
         for input_chunk in input_chunks:
-            output_chunk, hidden = self.sioconv(input_chunk, hidden)
+            output_chunk, hidden = self.retention(input_chunk, hidden)
             output_chunks.append(output_chunk)
 
         if self.is_refresh:
@@ -125,13 +125,13 @@ class ChunkWiseSioConvLayer(nn.Module):
     def set_is_refresh(self, is_refresh):
         self.is_refresh = is_refresh
 
-class SioConvBlock(nn.Module):
+class RetNetBlock(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: int, inner_dim: int, num_head: int, chunk_size:int, dropout: float, dtype):
         super().__init__()
         self.dtype = dtype 
 
         self.layer_norm_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
-        self.sioconv = ChunkWiseSioConvLayer(dim, inner_dim, num_head, chunk_size, dtype)
+        self.retention = ChunkWiseRetentionLayer(dim, inner_dim, num_head, chunk_size, dtype)
 
         self.layer_norm_ffn_sc_in = nn.LayerNorm(dim, elementwise_affine=True, bias=True, dtype=dtype)
         self.ffn_sc = FFN(dim, dim_ff_hidden, dtype)
@@ -141,7 +141,7 @@ class SioConvBlock(nn.Module):
     def forward(self, x):
         x_ = x
         x = self.layer_norm_sc_in(x)
-        x = self.sioconv(x)
+        x = self.retention(x)
         x = self.dropout(x)
         x = x + x_
 
@@ -154,12 +154,12 @@ class SioConvBlock(nn.Module):
         return x
 
     def reset_hidden(self):
-        self.sioconv.reset_hidden()
+        self.retention.reset_hidden()
 
     def set_is_refresh(self, is_refresh):
-        self.sioconv.set_is_refresh(is_refresh)
+        self.retention.set_is_refresh(is_refresh)
 
-class SioConv(nn.Module):
+class RetNet(nn.Module):
     def __init__(
         self,
         depth: int,
@@ -183,7 +183,7 @@ class SioConv(nn.Module):
         self.token_out = nn.Linear(dim, vocab_size, device=devices[-1], dtype=dtype)
         nn.init.normal_(self.token_out.weight, std=dim**-0.5)
         nn.init.constant_(self.token_out.bias, 0)
-        self.block_list = nn.ModuleList([SioConvBlock(dim, dim_ff_hidden, inner_dim, num_head, chunk_size, dropout, dtype) for _ in range(depth)])
+        self.block_list = nn.ModuleList([RetNetBlock(dim, dim_ff_hidden, inner_dim, num_head, chunk_size, dropout, dtype) for _ in range(depth)])
         self.layer_norm_last = nn.LayerNorm(dim, elementwise_affine=True, bias=True, device=devices[-1], dtype=dtype)
 
         self.num_parameters_token_in = sum(p.numel() for p in self.token_in.parameters())

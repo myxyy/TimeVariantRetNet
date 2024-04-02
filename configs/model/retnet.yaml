@@ -1,4 +1,4 @@
-_target_: src.model.sioconv.SioConv
+_target_: src.model.retnet.RetNet
 _partial_: True
 dim: 4096
 depth: 8
