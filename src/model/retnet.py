@@ -5,17 +5,13 @@ import numpy as np
 class FFN(nn.Module):
     def __init__(self, dim: int, dim_ff_hidden: float, dtype):
         super().__init__()
-        self.linear_1 = nn.Linear(dim, dim_ff_hidden, bias=True, dtype=dtype)
-        nn.init.normal_(self.linear_1.weight, std=dim**-0.5)
-        nn.init.constant_(self.linear_1.bias, 0)
-        self.linear_2 = nn.Linear(dim_ff_hidden, dim, bias=True, dtype=dtype)
-        nn.init.normal_(self.linear_2.weight, std=dim_ff_hidden**-0.5)
-        nn.init.constant_(self.linear_2.bias, 0)
+        self.fc_1= nn.Linear(dim, dim_ff_hidden, bias=True, dtype=dtype)
+        self.fc_2 = nn.Linear(dim_ff_hidden, dim, bias=True, dtype=dtype)
         self.act = nn.SiLU()
     def forward(self, x):
-        x = self.linear_1(x)
+        x = self.fc_1(x)
         x = self.act(x)
-        x = self.linear_2(x)
+        x = self.fc_2(x)
         return x
 
 class TimeVariantRetentionLayer(nn.Module):
