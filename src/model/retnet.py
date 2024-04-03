@@ -26,10 +26,6 @@ class TimeVariantRetentionLayer(nn.Module):
         self.num_head = num_head
         self.linear_qkva = nn.Linear(dim, num_head * inner_dim * 4 * 2, bias=False)
         self.linear_out = nn.Linear(num_head * inner_dim * 2, dim, bias=False)
-        self.fc_in_1 = nn.Linear(dim, dim)
-        self.fc_in_2 = nn.Linear(dim, num_head * inner_dim * 4)
-        self.fc_out_1 = nn.Linear(num_head * inner_dim * 2, dim)
-        self.fc_out_2 = nn.Linear(dim, dim)
         self.act = nn.SiLU()
         self.mat_v = nn.Parameter(torch.randn(num_head, inner_dim, inner_dim, dtype=torch.cfloat))
 
